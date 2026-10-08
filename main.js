@@ -33,7 +33,7 @@ let mainWindow = null;
 let quickWindow = null;
 let tray = null;
 let updateDownloaded = false;
-let autoUpdater = null;
+let pendingUpdate = null;
 
 app.setName('Muse');
 app.setAppUserModelId('ai.muse.desktop');
@@ -557,23 +557,113 @@ async function exportChat() {
   );
 }
 
-// ---- auto update ----------------------------------------------------------
-function setupAutoUpdate() {
-  try {
-    ({ autoUpdater } = require('electron-updater'));
-  } catch {
-    return; // electron-updater not installed; skip silently
+// ---- portable self-update -----------------------------------------------------
+// electron-updater doesn't support the portable target, so the portable build
+// updates itself: check the GitHub releases feed, download the new portable
+// exe in the background, and swap it in on restart via a tiny detached
+// PowerShell helper. A .bak of the previous version is kept beside the exe.
+const UPDATE_REPO = 'whxjwksjs/muse-windows';
+
+function cmpVersions(a, b) {
+  const pa = String(a).split('.').map(Number);
+  const pb = String(b).split('.').map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0);
+    if (d !== 0) return d > 0 ? 1 : -1;
   }
-  autoUpdater.autoDownload = true;
-  autoUpdater.on('update-downloaded', () => {
+  return 0;
+}
+
+async function checkForUpdates(manual) {
+  if (!app.isPackaged) return; // dev mode: never self-update
+  try {
+    const res = await fetch(`https://api.github.com/repos/${UPDATE_REPO}/releases/latest`, {
+      headers: { 'User-Agent': 'muse-windows', Accept: 'application/vnd.github+json' },
+    });
+    if (!res.ok) throw new Error(`release feed returned ${res.status}`);
+    const rel = await res.json();
+    const latest = String(rel.tag_name || rel.name || '').replace(/^v/i, '');
+    if (!latest || cmpVersions(latest, app.getVersion()) <= 0) {
+      if (manual) notify('No updates', 'You are on the latest version.');
+      return;
+    }
+    if (pendingUpdate && pendingUpdate.version === latest) return; // already downloaded
+    const asset = (rel.assets || []).find((a) => /^Muse-Portable-.*\.exe$/i.test(a.name || ''));
+    if (!asset) {
+      if (manual) notify('Update found', `v${latest} is out, but the release has no portable exe attached.`);
+      return;
+    }
+    notify('Downloading update', `Muse v${latest} is downloading in the background.`);
+    const dl = await fetch(asset.browser_download_url, { headers: { 'User-Agent': 'muse-windows' } });
+    if (!dl.ok) throw new Error(`download returned ${dl.status}`);
+    const buf = Buffer.from(await dl.arrayBuffer());
+    if (buf.length < 1024 || buf[0] !== 0x4d || buf[1] !== 0x5a) throw new Error('downloaded file is not a valid exe');
+    const dest = path.join(app.getPath('temp'), asset.name);
+    await fs.promises.writeFile(dest, buf);
+    pendingUpdate = { version: latest, filePath: dest };
     updateDownloaded = true;
     buildTrayMenu();
-    notify('Update ready', 'A Muse update has downloaded. Restart from the tray menu to install it.');
-  });
-  autoUpdater.on('error', () => { /* stay quiet; manual check exists in tray */ });
-  // First check shortly after launch, then every 6 hours.
-  setTimeout(() => autoUpdater.checkForUpdatesAndNotify().catch(() => {}), 30_000);
-  setInterval(() => autoUpdater.checkForUpdatesAndNotify().catch(() => {}), 6 * 3600_000);
+    notify('Update ready', `Muse v${latest} downloaded. Restart from the tray menu to install it.`);
+  } catch (e) {
+    if (manual) notify('Update check failed', String((e && e.message) || e));
+  }
+}
+
+function buildUpdateScript(currentExe, newExe) {
+  const q = (s) => s.replace(/'/g, "''");
+  return [
+    `$pidToWait = ${process.pid}`,
+    `$current = '${q(currentExe)}'`,
+    `$new = '${q(newExe)}'`,
+    `try { Wait-Process -Id $pidToWait -ErrorAction Stop } catch {}`,
+    `try {`,
+    `  Copy-Item -LiteralPath $current -Destination ($current + '.bak') -Force`,
+    `  Move-Item -LiteralPath $new -Destination $current -Force`,
+    `  Start-Process -FilePath $current`,
+    `} catch {}`,
+  ].join('\r\n');
+}
+
+function canWriteBesideExe() {
+  try {
+    const probe = path.join(path.dirname(process.execPath), '.muse-write-test');
+    fs.writeFileSync(probe, 'x');
+    fs.unlinkSync(probe);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function installUpdateAndRestart() {
+  if (!pendingUpdate) return;
+  if (!canWriteBesideExe()) {
+    notify('Update failed', 'The app folder is not writable. Download the new version from the GitHub releases page instead.');
+    return;
+  }
+  const scriptPath = path.join(app.getPath('temp'), 'muse-update.ps1');
+  try {
+    fs.writeFileSync(scriptPath, buildUpdateScript(process.execPath, pendingUpdate.filePath));
+  } catch (e) {
+    notify('Update failed', 'Could not write the updater script: ' + String((e && e.message) || e));
+    return;
+  }
+  try {
+    require('child_process').spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath], {
+      detached: true, stdio: 'ignore',
+    }).unref();
+  } catch (e) {
+    notify('Update failed', String((e && e.message) || e));
+    return;
+  }
+  app.quitting = true;
+  app.quit();
+}
+
+function setupAutoUpdate() {
+  // First check shortly after launch, then every 6 hours. Manual check lives in the tray menu.
+  setTimeout(() => checkForUpdates(false), 30_000);
+  setInterval(() => checkForUpdates(false), 6 * 3600_000);
 }
 
 // ---- tray -----------------------------------------------------------------
@@ -617,11 +707,9 @@ function buildTrayMenu() {
       checked: loginSettings.openAtLogin,
       click: (item) => app.setLoginItemSettings({ openAtLogin: item.checked }),
     },
-    autoUpdater
-      ? { label: 'Check for updates', click: () => autoUpdater.checkForUpdatesAndNotify().catch(() => notify('No updates', 'You are on the latest version.')) }
-      : { label: 'Check for updates', enabled: false },
+    { label: 'Check for updates', click: () => checkForUpdates(true) },
     ...(updateDownloaded
-      ? [{ label: 'Restart and install update', click: () => { app.quitting = true; autoUpdater.quitAndInstall(); } }]
+      ? [{ label: 'Restart and install update', click: installUpdateAndRestart }]
       : []),
     { type: 'separator' },
     {
