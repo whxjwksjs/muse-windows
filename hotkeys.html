@@ -104,61 +104,62 @@
 
   <div class="tab-content" id="tab-auto">
     <h2>Automation & Auto-Allow</h2>
-    <p class="hint">Allow automated prompt approvals for connectors and actions across websites.</p>
+    <p class="hint">Automatically approve supported permission and action prompts. These controls only affect prompts Muse can detect on the current page. They do not grant new account or provider permissions.</p>
 
     <div class="auto-card">
       <div class="auto-row">
         <div>
-          <span>Enable Automation</span>
-          <span class="sub">Master switch for all auto-approval features</span>
+          <span>Enable Auto-Approval</span>
+          <span class="sub">Turns automatic approval prompts on or off. Off means Muse will not click approval buttons.</span>
         </div>
         <input type="checkbox" id="chk-auto-master" class="toggle-switch">
       </div>
       <div class="auto-row">
         <div>
-          <span>Auto-Allow All Actions</span>
-          <span class="sub">Bypass individual action filters and approve everything</span>
+          <span>Allow All Actions</span>
+          <span class="sub">Approve every detected action on an allowed site, ignoring the individual action filters.</span>
         </div>
         <input type="checkbox" id="chk-auto-allowall" class="toggle-switch">
       </div>
       <div class="auto-row">
         <div>
-          <span>On-Screen Badge & Widget</span>
-          <span class="sub">Show quick-toggle overlay badge on web pages</span>
+          <span>On-Screen Controls</span>
+          <span class="sub">Show the Auto-Approval badge and quick controls on supported pages.</span>
         </div>
         <input type="checkbox" id="chk-auto-widget" class="toggle-switch">
       </div>
     </div>
 
-    <div class="section-title">Connector & Action Controls</div>
+    <div class="section-title">Global Action Permissions</div>
     <div class="auto-card">
       <div class="auto-row">
-        <span>Connectors & Plugins</span>
+        <div><span>App / Connector Actions</span><span class="sub">Connection, authorization, integration, and plugin approval prompts.</span></div>
         <input type="checkbox" id="chk-act-connectors" class="toggle-switch">
       </div>
       <div class="auto-row">
-        <span>File & Data Access</span>
+        <div><span>File and Data Access</span><span class="sub">Prompts to access, upload, download, read, or write files and documents.</span></div>
         <input type="checkbox" id="chk-act-file" class="toggle-switch">
       </div>
       <div class="auto-row">
-        <span>External Link Navigation</span>
+        <div><span>External Navigation</span><span class="sub">Prompts to open links, URLs, websites, tabs, or windows outside the chat.</span></div>
         <input type="checkbox" id="chk-act-links" class="toggle-switch">
       </div>
       <div class="auto-row">
-        <span>Code Execution (Terminal / Scripts)</span>
+        <div><span>Code Execution</span><span class="sub">Prompts to run code, scripts, shell commands, or terminal actions.</span></div>
         <input type="checkbox" id="chk-act-code" class="toggle-switch">
       </div>
       <div class="auto-row">
-        <span>Media & Microphone Requests</span>
+        <div><span>Microphone and Media</span><span class="sub">Microphone, camera, audio, and other media permission prompts.</span></div>
         <input type="checkbox" id="chk-act-media" class="toggle-switch">
       </div>
     </div>
 
-    <div class="section-title">Per-Website Permissions</div>
+    <div class="section-title">Per-Website Rules</div>
     <div class="auto-card">
+      <div style="font-size:11.5px;color:#8a909d;margin-bottom:8px;">A website rule overrides the global action setting for that website. “Always allow” enables automatic approvals there; individual action switches narrow what can be approved.</div>
       <div id="site-rules-list"></div>
       <div class="site-input-group">
-        <input type="text" id="site-add-input" class="site-input" placeholder="e.g. custom-ai.com">
+        <input type="text" id="site-add-input" class="site-input" placeholder="example.com">
         <button id="site-add-btn" class="action" style="flex:0; padding:4px 12px;">Add</button>
       </div>
     </div>
