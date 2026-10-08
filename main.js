@@ -14,6 +14,7 @@ const DEFAULT_HOTKEYS = {
   mic: 'CommandOrControl+Shift+U',
   speaker: 'CommandOrControl+Shift+O',
   automation: 'CommandOrControl+Shift+A',
+  metaAccount: 'CommandOrControl+Shift+N',
 };
 const HOTKEY_LABELS = {
   quick: 'Quick chat popup',
@@ -22,6 +23,7 @@ const HOTKEY_LABELS = {
   mic: 'Mute / unmute microphone',
   speaker: 'Mute / unmute app sound',
   automation: 'Toggle automation (Auto-Allow)',
+  metaAccount: 'Next Meta AI account',
 };
 const HOTKEY_ACTIONS = {
   quick: () => toggleQuickWindow(),
@@ -30,6 +32,7 @@ const HOTKEY_ACTIONS = {
   mic: () => toggleMic(),
   speaker: () => toggleSpeaker(),
   automation: () => toggleAutomationMaster(),
+  metaAccount: () => switchMetaAccount(),
 };
 
 let mainWindow = null;
@@ -261,10 +264,62 @@ async function signOut() {
 function toggleSite() {
   state.site = state.site === 'muse' ? 'meta' : 'muse';
   saveState();
+  // Reuse the existing window when possible. This keeps the switch feeling
+  // like changing tabs instead of restarting the app.
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.setTitle(`${currentSite().name} (Muse desktop)`);
+    mainWindow.loadURL(currentSite().url);
+    if (quickWindow && !quickWindow.isDestroyed()) {
+      quickWindow.setTitle(`${currentSite().name} quick chat`);
+      quickWindow.loadURL(currentSite().url);
+    }
+    showMainWindow();
+  } else {
+    createMainWindow();
+    showMainWindow();
+  }
+  buildTrayMenu();
+}
+
+function switchMetaAccount(id) {
+  if (state.site !== 'meta') state.site = 'meta';
+  switchProfile(id);
+}
+
+function switchNextMetaAccount() {
+  if (!state.profiles.length) return;
+  const current = state.profiles.findIndex((p) => p.id === state.activeProfileId);
+  const next = state.profiles[(current + 1) % state.profiles.length];
+  switchMetaAccount(next.id);
+}
+
+function addMetaAccount() {
+  const id = `p${Date.now()}`;
+  const profile = { id, name: `Meta AI Account ${state.profiles.length + 1}` };
+  state.profiles.push(profile);
+  state.activeProfileId = id;
+  state.site = 'meta';
+  saveState();
+  setupDownloadHandler(id);
+  setupPermissions(id);
   closeWindows();
   createMainWindow();
   showMainWindow();
   buildTrayMenu();
+  notify('New Meta AI account', `${profile.name} created. Sign in to Meta AI. Your other saved sessions remain untouched.`);
+}
+
+function switchMetaAccount() {
+  if (!state.profiles.length) return;
+  const current = state.profiles.findIndex((p) => p.id === state.activeProfileId);
+  const next = state.profiles[(current + 1) % state.profiles.length];
+  switchMetaAccountById(next.id);
+}
+
+function switchMetaAccountById(id) {
+  if (!state.profiles.some((p) => p.id === id)) return;
+  state.site = 'meta';
+  switchProfile(id);
 }
 
 // ---- clipboard -> text file ----------------------------------------------
@@ -835,10 +890,26 @@ function buildTrayMenu() {
     }
   } catch { /* ignore */ }
 
+  const metaAccounts = state.profiles.map((p) => ({
+    label: p.name,
+    type: 'radio',
+    checked: p.id === state.activeProfileId && state.site === 'meta',
+    click: () => switchMetaAccountById(p.id),
+  }));
+
   const template = [
     { label: 'Open Muse', click: showMainWindow },
     { label: `Quick chat  (${prettyHotkey(state.hotkeys.quick)})`, click: toggleQuickWindow },
     { label: `Switch to ${otherSite.name}  (${prettyHotkey(state.hotkeys.site)})`, click: toggleSite },
+    {
+      label: 'Meta AI Accounts',
+      submenu: [
+        ...metaAccounts,
+        { type: 'separator' },
+        { label: `Next Meta AI account  (${prettyHotkey(state.hotkeys.metaAccount)})`, click: switchMetaAccount },
+        { label: 'Add Meta AI account…', click: addMetaAccount },
+      ],
+    },
     { type: 'separator' },
     {
       label: 'Automation / Auto-Allow',
