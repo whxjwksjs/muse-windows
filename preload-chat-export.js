@@ -289,16 +289,24 @@ contextBridge.exposeInMainWorld('automationAPI', {
       code_execution: true,
     },
     sites: {},
+    siteActions: {},
   };
 
   function isCurrentSiteAllowed() {
     if (!autoState.enabled) return false;
     if (autoState.autoAllowAll) return true;
     const hostname = location.hostname.toLowerCase();
-    if (autoState.sites[hostname] !== undefined) {
-      return !!autoState.sites[hostname];
-    }
-    return true; // default allowed for site when master automation is on
+    return autoState.sites[hostname] === true;
+  }
+
+  function isActionAllowed(actionKey) {
+    if (!autoState.enabled) return false;
+    if (autoState.autoAllowAll) return true;
+    if (!isCurrentSiteAllowed()) return false;
+    const hostname = location.hostname.toLowerCase();
+    const siteRules = autoState.siteActions && autoState.siteActions[hostname];
+    if (siteRules && siteRules[actionKey] !== undefined) return !!siteRules[actionKey];
+    return autoState.actions[actionKey] === true;
   }
 
   // --- UI Widget ---
@@ -451,27 +459,27 @@ contextBridge.exposeInMainWorld('automationAPI', {
 
         <label style="display:flex; justify-content:space-between; align-items:center; font-size:12px; cursor:pointer;">
           <span>Connectors & Plugins</span>
-          <input type="checkbox" id="muse-chk-act-connectors" ${autoState.actions.connectors ? 'checked' : ''}>
+          <input type="checkbox" id="muse-chk-act-connectors" ${isActionAllowed('connectors') ? 'checked' : ''}>
         </label>
 
         <label style="display:flex; justify-content:space-between; align-items:center; font-size:12px; cursor:pointer;">
           <span>File & Data Access</span>
-          <input type="checkbox" id="muse-chk-act-file" ${autoState.actions.file_access ? 'checked' : ''}>
+          <input type="checkbox" id="muse-chk-act-file" ${isActionAllowed('file_access') ? 'checked' : ''}>
         </label>
 
         <label style="display:flex; justify-content:space-between; align-items:center; font-size:12px; cursor:pointer;">
           <span>External Links</span>
-          <input type="checkbox" id="muse-chk-act-links" ${autoState.actions.external_links ? 'checked' : ''}>
+          <input type="checkbox" id="muse-chk-act-links" ${isActionAllowed('external_links') ? 'checked' : ''}>
         </label>
 
         <label style="display:flex; justify-content:space-between; align-items:center; font-size:12px; cursor:pointer;">
           <span>Code Execution</span>
-          <input type="checkbox" id="muse-chk-act-code" ${autoState.actions.code_execution ? 'checked' : ''}>
+          <input type="checkbox" id="muse-chk-act-code" ${isActionAllowed('code_execution') ? 'checked' : ''}>
         </label>
 
         <label style="display:flex; justify-content:space-between; align-items:center; font-size:12px; cursor:pointer;">
           <span>Media & Mic</span>
-          <input type="checkbox" id="muse-chk-act-media" ${autoState.actions.media_permissions ? 'checked' : ''}>
+          <input type="checkbox" id="muse-chk-act-media" ${isActionAllowed('media_permissions') ? 'checked' : ''}>
         </label>
       </div>
 
@@ -493,19 +501,19 @@ contextBridge.exposeInMainWorld('automationAPI', {
     };
 
     panelContainer.querySelector('#muse-chk-act-connectors').onchange = (e) => {
-      ipcRenderer.invoke('automation-set-action', 'connectors', e.target.checked);
+      ipcRenderer.invoke('automation-set-site-action', hostname, 'connectors', e.target.checked);
     };
     panelContainer.querySelector('#muse-chk-act-file').onchange = (e) => {
-      ipcRenderer.invoke('automation-set-action', 'file_access', e.target.checked);
+      ipcRenderer.invoke('automation-set-site-action', hostname, 'file_access', e.target.checked);
     };
     panelContainer.querySelector('#muse-chk-act-links').onchange = (e) => {
-      ipcRenderer.invoke('automation-set-action', 'external_links', e.target.checked);
+      ipcRenderer.invoke('automation-set-site-action', hostname, 'external_links', e.target.checked);
     };
     panelContainer.querySelector('#muse-chk-act-code').onchange = (e) => {
-      ipcRenderer.invoke('automation-set-action', 'code_execution', e.target.checked);
+      ipcRenderer.invoke('automation-set-site-action', hostname, 'code_execution', e.target.checked);
     };
     panelContainer.querySelector('#muse-chk-act-media').onchange = (e) => {
-      ipcRenderer.invoke('automation-set-action', 'media_permissions', e.target.checked);
+      ipcRenderer.invoke('automation-set-site-action', hostname, 'media_permissions', e.target.checked);
     };
 
     panelContainer.querySelector('#muse-panel-settings').onclick = () => {
@@ -563,21 +571,21 @@ contextBridge.exposeInMainWorld('automationAPI', {
     const combined = (text + ' ' + containerText).toLowerCase();
 
     if (/connector|plugin|integration|oauth|auth|account/.test(combined)) {
-      return autoState.actions.connectors;
+      return isActionAllowed('connectors');
     }
     if (/file|folder|document|read|write|download|upload/.test(combined)) {
-      return autoState.actions.file_access;
+      return isActionAllowed('file_access');
     }
     if (/external|link|open in new|url|navigate/.test(combined)) {
-      return autoState.actions.external_links;
+      return isActionAllowed('external_links');
     }
     if (/code|python|bash|script|execute|terminal|run/.test(combined)) {
-      return autoState.actions.code_execution;
+      return isActionAllowed('code_execution');
     }
     if (/mic|microphone|audio|camera|media/.test(combined)) {
-      return autoState.actions.media_permissions;
+      return isActionAllowed('media_permissions');
     }
-    return true; // default action match
+    return false;
   }
 
   function checkAndAutoApprove() {
