@@ -16,8 +16,14 @@ your chat with Muse in a desktop window.
 - **Muse / Meta AI toggle**: **Ctrl+Shift+M** or the tray menu switches the
   window between muse.ai and meta.ai. They are separate products with
   separate logins; the toggle just switches sites, it does not merge them.
+  The switch reuses the current window instead of restarting it.
+- **Saved Meta AI accounts**: each profile keeps its own isolated login/session.
+  On Meta AI, the tray has an account switcher plus "Add Meta AI account…".
+  **Ctrl+Shift+N** cycles through saved Meta AI accounts and can be remapped
+  in Settings & Hotkeys.
   Meta AI's voice chat and TTS are available when you're on its tab, and the
-  app grants microphone access for voice chat (muse.ai and meta.ai only).- **Save clipboard text as .txt**: tray menu item dumps the clipboard to
+  app grants microphone access for voice chat (muse.ai and meta.ai only).
+- **Save clipboard text as .txt**: tray menu item dumps the clipboard to
   `Documents/Muse clips/clip-<timestamp>.txt` and opens its folder, so huge
   pastes can be dragged into chat as a file instead of freezing the input.
 - **Right-click menu + downloads**: Save link as / Save image as / Copy link
