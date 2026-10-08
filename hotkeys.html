@@ -104,7 +104,7 @@
 
   <div class="tab-content" id="tab-auto">
     <h2>Automation & Auto-Allow</h2>
-    <p class="hint">Allow automated prompt approvals for connectors and actions across websites.</p>
+    <p class="hint">Allow automated prompt approvals for GitHub actions and file downloads across websites.</p>
 
     <div class="auto-card">
       <div class="auto-row">
@@ -116,13 +116,6 @@
       </div>
       <div class="auto-row">
         <div>
-          <span>Auto-Allow All Actions</span>
-          <span class="sub">Bypass individual action filters and approve everything</span>
-        </div>
-        <input type="checkbox" id="chk-auto-allowall" class="toggle-switch">
-      </div>
-      <div class="auto-row">
-        <div>
           <span>On-Screen Badge & Widget</span>
           <span class="sub">Show quick-toggle overlay badge on web pages</span>
         </div>
@@ -130,27 +123,21 @@
       </div>
     </div>
 
-    <div class="section-title">Connector & Action Controls</div>
+    <div class="section-title">Allowed Categories</div>
     <div class="auto-card">
       <div class="auto-row">
-        <span>Connectors & Plugins</span>
-        <input type="checkbox" id="chk-act-connectors" class="toggle-switch">
+        <div>
+          <span>GitHub Actions</span>
+          <span class="sub">Push, commit, or pull request approvals</span>
+        </div>
+        <input type="checkbox" id="chk-act-github" class="toggle-switch">
       </div>
       <div class="auto-row">
-        <span>File & Data Access</span>
-        <input type="checkbox" id="chk-act-file" class="toggle-switch">
-      </div>
-      <div class="auto-row">
-        <span>External Link Navigation</span>
-        <input type="checkbox" id="chk-act-links" class="toggle-switch">
-      </div>
-      <div class="auto-row">
-        <span>Code Execution (Terminal / Scripts)</span>
-        <input type="checkbox" id="chk-act-code" class="toggle-switch">
-      </div>
-      <div class="auto-row">
-        <span>Media & Microphone Requests</span>
-        <input type="checkbox" id="chk-act-media" class="toggle-switch">
+        <div>
+          <span>File Downloads</span>
+          <span class="sub">File and document download confirmations</span>
+        </div>
+        <input type="checkbox" id="chk-act-downloads" class="toggle-switch">
       </div>
     </div>
 
@@ -265,15 +252,11 @@ let autoState = null;
 function renderAutomationUI() {
   if (!autoState) return;
   document.getElementById('chk-auto-master').checked = !!autoState.enabled;
-  document.getElementById('chk-auto-allowall').checked = !!autoState.autoAllowAll;
   document.getElementById('chk-auto-widget').checked = !!autoState.showOnScreenWidget;
 
   const acts = autoState.actions || {};
-  document.getElementById('chk-act-connectors').checked = !!acts.connectors;
-  document.getElementById('chk-act-file').checked = !!acts.file_access;
-  document.getElementById('chk-act-links').checked = !!acts.external_links;
-  document.getElementById('chk-act-code').checked = !!acts.code_execution;
-  document.getElementById('chk-act-media').checked = !!acts.media_permissions;
+  document.getElementById('chk-act-github').checked = !!acts.github_actions;
+  document.getElementById('chk-act-downloads').checked = !!acts.file_downloads;
 
   const sitesList = document.getElementById('site-rules-list');
   sitesList.innerHTML = '';
@@ -322,27 +305,15 @@ async function refreshAutoState() {
 document.getElementById('chk-auto-master').onchange = (e) => {
   autoApi.set({ enabled: e.target.checked }).then(refreshAutoState);
 };
-document.getElementById('chk-auto-allowall').onchange = (e) => {
-  autoApi.set({ autoAllowAll: e.target.checked }).then(refreshAutoState);
-};
 document.getElementById('chk-auto-widget').onchange = (e) => {
   autoApi.set({ showOnScreenWidget: e.target.checked }).then(refreshAutoState);
 };
 
-document.getElementById('chk-act-connectors').onchange = (e) => {
-  autoApi.setAction('connectors', e.target.checked).then(refreshAutoState);
+document.getElementById('chk-act-github').onchange = (e) => {
+  autoApi.setAction('github_actions', e.target.checked).then(refreshAutoState);
 };
-document.getElementById('chk-act-file').onchange = (e) => {
-  autoApi.setAction('file_access', e.target.checked).then(refreshAutoState);
-};
-document.getElementById('chk-act-links').onchange = (e) => {
-  autoApi.setAction('external_links', e.target.checked).then(refreshAutoState);
-};
-document.getElementById('chk-act-code').onchange = (e) => {
-  autoApi.setAction('code_execution', e.target.checked).then(refreshAutoState);
-};
-document.getElementById('chk-act-media').onchange = (e) => {
-  autoApi.setAction('media_permissions', e.target.checked).then(refreshAutoState);
+document.getElementById('chk-act-downloads').onchange = (e) => {
+  autoApi.setAction('file_downloads', e.target.checked).then(refreshAutoState);
 };
 
 document.getElementById('site-add-btn').onclick = () => {

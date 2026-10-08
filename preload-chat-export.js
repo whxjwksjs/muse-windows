@@ -279,26 +279,21 @@ contextBridge.exposeInMainWorld('automationAPI', {
 
   let autoState = {
     enabled: false,
-    autoAllowAll: false,
     showOnScreenWidget: true,
     actions: {
-      connectors: true,
-      file_access: true,
-      external_links: true,
-      media_permissions: true,
-      code_execution: true,
+      github_actions: false,
+      file_downloads: false,
     },
     sites: {},
   };
 
   function isCurrentSiteAllowed() {
     if (!autoState.enabled) return false;
-    if (autoState.autoAllowAll) return true;
     const hostname = location.hostname.toLowerCase();
     if (autoState.sites[hostname] !== undefined) {
       return !!autoState.sites[hostname];
     }
-    return true; // default allowed for site when master automation is on
+    return true;
   }
 
   // --- UI Widget ---
@@ -437,41 +432,21 @@ contextBridge.exposeInMainWorld('automationAPI', {
       </div>
 
       <div style="display:flex; justify-content:space-between; align-items:center;">
-        <span style="font-size:12.5px;">Auto Allow All</span>
-        <input type="checkbox" id="muse-chk-allowall" ${autoState.autoAllowAll ? 'checked' : ''} style="cursor:pointer;">
-      </div>
-
-      <div style="display:flex; justify-content:space-between; align-items:center;">
         <span style="font-size:12px; color:#a0a6b5;">Allow on ${hostname}</span>
         <input type="checkbox" id="muse-chk-site" ${siteAllowed ? 'checked' : ''} style="cursor:pointer;">
       </div>
 
       <div style="border-top:1px solid #2d323e; padding-top:8px; display:flex; flex-direction:column; gap:6px;">
-        <span style="font-size:11px; font-weight:600; color:#8a909d; text-transform:uppercase;">Actions & Connectors</span>
+        <span style="font-size:11px; font-weight:600; color:#8a909d; text-transform:uppercase;">Allowed Actions</span>
 
         <label style="display:flex; justify-content:space-between; align-items:center; font-size:12px; cursor:pointer;">
-          <span>Connectors & Plugins</span>
-          <input type="checkbox" id="muse-chk-act-connectors" ${autoState.actions.connectors ? 'checked' : ''}>
+          <span>GitHub Actions (push/commit/PR)</span>
+          <input type="checkbox" id="muse-chk-act-github" ${autoState.actions.github_actions ? 'checked' : ''}>
         </label>
 
         <label style="display:flex; justify-content:space-between; align-items:center; font-size:12px; cursor:pointer;">
-          <span>File & Data Access</span>
-          <input type="checkbox" id="muse-chk-act-file" ${autoState.actions.file_access ? 'checked' : ''}>
-        </label>
-
-        <label style="display:flex; justify-content:space-between; align-items:center; font-size:12px; cursor:pointer;">
-          <span>External Links</span>
-          <input type="checkbox" id="muse-chk-act-links" ${autoState.actions.external_links ? 'checked' : ''}>
-        </label>
-
-        <label style="display:flex; justify-content:space-between; align-items:center; font-size:12px; cursor:pointer;">
-          <span>Code Execution</span>
-          <input type="checkbox" id="muse-chk-act-code" ${autoState.actions.code_execution ? 'checked' : ''}>
-        </label>
-
-        <label style="display:flex; justify-content:space-between; align-items:center; font-size:12px; cursor:pointer;">
-          <span>Media & Mic</span>
-          <input type="checkbox" id="muse-chk-act-media" ${autoState.actions.media_permissions ? 'checked' : ''}>
+          <span>File Downloads</span>
+          <input type="checkbox" id="muse-chk-act-downloads" ${autoState.actions.file_downloads ? 'checked' : ''}>
         </label>
       </div>
 
@@ -484,28 +459,15 @@ contextBridge.exposeInMainWorld('automationAPI', {
       ipcRenderer.invoke('automation-set', { enabled: e.target.checked });
     };
 
-    panelContainer.querySelector('#muse-chk-allowall').onchange = (e) => {
-      ipcRenderer.invoke('automation-set', { autoAllowAll: e.target.checked });
-    };
-
     panelContainer.querySelector('#muse-chk-site').onchange = (e) => {
       ipcRenderer.invoke('automation-toggle-site', hostname, e.target.checked);
     };
 
-    panelContainer.querySelector('#muse-chk-act-connectors').onchange = (e) => {
-      ipcRenderer.invoke('automation-set-action', 'connectors', e.target.checked);
+    panelContainer.querySelector('#muse-chk-act-github').onchange = (e) => {
+      ipcRenderer.invoke('automation-set-action', 'github_actions', e.target.checked);
     };
-    panelContainer.querySelector('#muse-chk-act-file').onchange = (e) => {
-      ipcRenderer.invoke('automation-set-action', 'file_access', e.target.checked);
-    };
-    panelContainer.querySelector('#muse-chk-act-links').onchange = (e) => {
-      ipcRenderer.invoke('automation-set-action', 'external_links', e.target.checked);
-    };
-    panelContainer.querySelector('#muse-chk-act-code').onchange = (e) => {
-      ipcRenderer.invoke('automation-set-action', 'code_execution', e.target.checked);
-    };
-    panelContainer.querySelector('#muse-chk-act-media').onchange = (e) => {
-      ipcRenderer.invoke('automation-set-action', 'media_permissions', e.target.checked);
+    panelContainer.querySelector('#muse-chk-act-downloads').onchange = (e) => {
+      ipcRenderer.invoke('automation-set-action', 'file_downloads', e.target.checked);
     };
 
     panelContainer.querySelector('#muse-panel-settings').onclick = () => {
@@ -528,10 +490,7 @@ contextBridge.exposeInMainWorld('automationAPI', {
     if (!badge) return;
 
     if (autoState.enabled) {
-      if (autoState.autoAllowAll) {
-        badge.innerHTML = `<span style="color:#7ee2a8;">⚡</span> Auto Allow: ALL`;
-        badge.style.borderColor = '#3b82f6';
-      } else if (isCurrentSiteAllowed()) {
+      if (isCurrentSiteAllowed()) {
         badge.innerHTML = `<span style="color:#7ee2a8;">⚡</span> Auto Allow: ON`;
         badge.style.borderColor = '#10b981';
       } else {
@@ -546,45 +505,33 @@ contextBridge.exposeInMainWorld('automationAPI', {
     renderPanelContent();
   }
 
-  // --- DOM Auto-Approval Observer ---
-  const CLICK_KEYWORDS = [
-    'allow', 'approve', 'confirm', 'connect', 'authorize', 'accept',
-    'grant access', 'run code', 'proceed', 'continue'
+  // --- Strict Action Matching & Hard Purchase Exclusion Engine ---
+  const PURCHASE_KEYWORDS = ['purchase', 'payment', 'buy', 'checkout', 'order', 'subscribe', 'billing', 'price'];
+
+  const GITHUB_PHRASES = [
+    'approve push', 'confirm commit', 'create pull request', 'approve pull request',
+    'authorize push', 'merge pull request', 'approve commit', 'push to repository', 'commit changes'
   ];
 
-  const CONNECTOR_CONTAINER_SELECTORS = [
-    '[role="dialog"]', '.modal', '[data-testid*="modal"]',
-    '[class*="confirm"]', '[class*="authorize"]', '[class*="connector"]',
-    '[class*="permission"]', '[class*="approval"]'
+  const DOWNLOAD_PHRASES = [
+    'confirm download', 'allow download', 'download file', 'approve download', 'start download'
   ];
 
-  function matchesActionCategory(text, containerText) {
-    if (autoState.autoAllowAll) return true;
-    const combined = (text + ' ' + containerText).toLowerCase();
+  function containsPurchaseTerms(text) {
+    const lower = text.toLowerCase();
+    return PURCHASE_KEYWORDS.some((kw) => lower.includes(kw));
+  }
 
-    if (/connector|plugin|integration|oauth|auth|account/.test(combined)) {
-      return autoState.actions.connectors;
-    }
-    if (/file|folder|document|read|write|download|upload/.test(combined)) {
-      return autoState.actions.file_access;
-    }
-    if (/external|link|open in new|url|navigate/.test(combined)) {
-      return autoState.actions.external_links;
-    }
-    if (/code|python|bash|script|execute|terminal|run/.test(combined)) {
-      return autoState.actions.code_execution;
-    }
-    if (/mic|microphone|audio|camera|media/.test(combined)) {
-      return autoState.actions.media_permissions;
-    }
-    return true; // default action match
+  function matchesCategoryPhrases(txt, categoryKey) {
+    if (!autoState.actions[categoryKey]) return false;
+    const phrases = categoryKey === 'github_actions' ? GITHUB_PHRASES : DOWNLOAD_PHRASES;
+    return phrases.some((phrase) => txt.includes(phrase));
   }
 
   function checkAndAutoApprove() {
     if (!autoState.enabled) return;
     if (!isCurrentSiteAllowed()) return;
 
-    // Search for interactive confirmation buttons
     const buttons = Array.from(document.querySelectorAll('button, a[role="button"], [role="button"], input[type="button"], input[type="submit"]'));
 
     for (const btn of buttons) {
@@ -594,23 +541,30 @@ contextBridge.exposeInMainWorld('automationAPI', {
       const txt = (btn.innerText || btn.value || btn.getAttribute('aria-label') || '').trim().toLowerCase();
       if (!txt) continue;
 
-      const isMatch = CLICK_KEYWORDS.some((kw) => {
-        if (txt === kw) return true;
-        if (txt.startsWith(kw + ' ') || txt.endsWith(' ' + kw)) return true;
-        return false;
-      });
+      // Container context text
+      let container = btn.closest('[role="dialog"], .modal, [data-testid*="modal"], [class*="confirm"], [class*="permission"]');
+      const containerText = container ? container.innerText || '' : '';
+      const fullText = (txt + ' ' + containerText).toLowerCase();
 
-      if (!isMatch) continue;
+      // 1. HARD PURCHASE EXCLUSION (Checked BEFORE any allow logic)
+      if (containsPurchaseTerms(fullText)) {
+        btn.__museAutoHandled = true; // Mark handled so we never click it
+        continue;
+      }
 
-      // Check context container
-      let container = btn.closest(CONNECTOR_CONTAINER_SELECTORS.join(', '));
-      const containerText = container ? container.innerText || '' : document.body.innerText.slice(0, 1000);
+      // 2. Strict category matching (GitHub Actions vs File Downloads)
+      let matchedCategory = null;
+      if (matchesCategoryPhrases(txt, 'github_actions')) {
+        matchedCategory = 'GitHub Action';
+      } else if (matchesCategoryPhrases(txt, 'file_downloads')) {
+        matchedCategory = 'File Download';
+      }
 
-      if (matchesActionCategory(txt, containerText)) {
+      if (matchedCategory) {
         btn.__museAutoHandled = true;
         try {
           btn.click();
-          showToast(`⚡ Auto-approved action: "${txt}"`);
+          showToast(`⚡ Auto-approved ${matchedCategory}: "${txt}"`);
         } catch (e) {
           /* ignore click failure */
         }
@@ -652,6 +606,7 @@ contextBridge.exposeInMainWorld('automationAPI', {
     startObserver();
   }
 })();
+
 // ---- floating export button -------------------------------------------------
 function injectExportButton() {
   if (document.getElementById('muse-export-btn')) return;

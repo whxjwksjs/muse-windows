@@ -50,14 +50,10 @@ app.commandLine.appendSwitch('enable-zero-copy');
 function defaultAutomation() {
   return {
     enabled: false,
-    autoAllowAll: false,
     showOnScreenWidget: true,
     actions: {
-      connectors: true,
-      file_access: true,
-      external_links: true,
-      media_permissions: true,
-      code_execution: true,
+      github_actions: false,
+      file_downloads: false,
     },
     sites: {},
   };
@@ -293,13 +289,12 @@ function saveClipboardAsFile() {
 function isSiteAutomationAllowed(hostname) {
   const auto = state.automation;
   if (!auto.enabled) return false;
-  if (auto.autoAllowAll) return true;
   if (!hostname) return true;
   const normalized = hostname.toLowerCase();
   if (auto.sites[normalized] !== undefined) {
     return !!auto.sites[normalized];
   }
-  return true; // Default allow for specific site if not explicitly disabled when automation is on
+  return true;
 }
 
 function notifyWebContentsAutomationChange() {
@@ -319,7 +314,7 @@ function toggleAutomationMaster(forcedValue) {
   notify(
     state.automation.enabled ? 'Automation Active' : 'Automation Disabled',
     state.automation.enabled
-      ? 'Auto-allow rules & shortcuts are active.'
+      ? 'Auto-allow rules are active.'
       : 'Auto-allow features have been paused.'
   );
 }
@@ -330,25 +325,8 @@ function setupPermissions(profileId) {
     let url = '';
     try { url = webContents.getURL(); } catch { /* ignore */ }
     const ours = /^https:\/\/(www\.)?(muse\.ai|meta\.ai)(\/|$)/.test(url);
-
-    let hostname = '';
-    try { hostname = new URL(url).hostname; } catch { /* ignore */ }
-
-    // Mic for voice chat, clipboard for the site's own copy buttons.
-    let allowed = permission === 'media' || permission === 'audioCapture' ||
+    const allowed = permission === 'media' || permission === 'audioCapture' ||
       permission === 'clipboard-read' || permission === 'clipboard-sanitized-write';
-
-    // If master automation is on, evaluate media_permissions and site rule
-    if (state.automation.enabled) {
-      if (!isSiteAutomationAllowed(hostname)) {
-        allowed = false;
-      } else if (state.automation.autoAllowAll) {
-        allowed = true;
-      } else if ((permission === 'media' || permission === 'audioCapture') && state.automation.actions.media_permissions) {
-        allowed = true;
-      }
-    }
-
     callback(ours && allowed);
   });
 }
@@ -480,7 +458,6 @@ ipcMain.handle('automation-get', () => ({
 ipcMain.handle('automation-set', (e, updates) => {
   if (!updates || typeof updates !== 'object') return { ok: false };
   if (typeof updates.enabled === 'boolean') state.automation.enabled = updates.enabled;
-  if (typeof updates.autoAllowAll === 'boolean') state.automation.autoAllowAll = updates.autoAllowAll;
   if (typeof updates.showOnScreenWidget === 'boolean') state.automation.showOnScreenWidget = updates.showOnScreenWidget;
   if (updates.actions && typeof updates.actions === 'object') {
     state.automation.actions = { ...state.automation.actions, ...updates.actions };
@@ -529,6 +506,7 @@ ipcMain.handle('open-settings', () => {
   openHotkeySettings();
   return { ok: true };
 });
+
 // Floating "Export chat" button in the page asks the main process to export.
 ipcMain.on('muse-export-request', () => exportChat());
 
@@ -838,22 +816,34 @@ function buildTrayMenu() {
           click: () => toggleAutomationMaster(),
         },
         {
-          label: 'Auto-Allow All Actions',
+          label: `Always allow on ${currentHostname}`,
           type: 'checkbox',
-          checked: state.automation.autoAllowAll,
+          checked: isSiteAutomationAllowed(currentHostname),
           click: (item) => {
-            state.automation.autoAllowAll = item.checked;
+            state.automation.sites[currentHostname.toLowerCase()] = item.checked;
+            saveState();
+            buildTrayMenu();
+            notifyWebContentsAutomationChange();
+          },
+        },
+        { type: 'separator' },
+        {
+          label: 'GitHub Actions (push/commit/PR)',
+          type: 'checkbox',
+          checked: state.automation.actions.github_actions,
+          click: (item) => {
+            state.automation.actions.github_actions = item.checked;
             saveState();
             buildTrayMenu();
             notifyWebContentsAutomationChange();
           },
         },
         {
-          label: `Always allow on ${currentHostname}`,
+          label: 'File Downloads',
           type: 'checkbox',
-          checked: isSiteAutomationAllowed(currentHostname),
+          checked: state.automation.actions.file_downloads,
           click: (item) => {
-            state.automation.sites[currentHostname.toLowerCase()] = item.checked;
+            state.automation.actions.file_downloads = item.checked;
             saveState();
             buildTrayMenu();
             notifyWebContentsAutomationChange();
