@@ -287,21 +287,44 @@ function renderAutomationUI() {
       const allowed = sites[host];
       const div = document.createElement('div');
       div.className = 'site-item';
+      const rules = autoState.siteActions?.[host] || {};
+      const actionDefs = [
+        ['connectors', 'Connectors'],
+        ['file_access', 'Files'],
+        ['external_links', 'Links'],
+        ['code_execution', 'Code'],
+        ['media_permissions', 'Media']
+      ];
       div.innerHTML = `
-        <span>${host}</span>
-        <div style="display:flex; align-items:center; gap:8px;">
-          <input type="checkbox" ${allowed ? 'checked' : ''} class="toggle-switch">
-          <button style="background:none; border:none; color:#ff9a9a; cursor:pointer; font-size:13px;">✕</button>
+        <div style="flex:1;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <strong>${host}</strong>
+            <input type="checkbox" ${allowed ? 'checked' : ''} class="toggle-switch site-master" title="Always allow on this website">
+          </div>
+          <div style="display:flex; flex-wrap:wrap; gap:7px 10px; margin-top:6px;">
+            ${actionDefs.map(([key, label]) => `
+              <label style="display:flex; align-items:center; gap:4px; color:#b9bfcc; font-size:11px;">
+                <input type="checkbox" data-action="${key}" ${rules[key] !== undefined ? (rules[key] ? 'checked' : '') : (autoState.actions?.[key] ? 'checked' : '')}>
+                ${label}
+              </label>`).join('')}
+          </div>
         </div>
+        <button class="site-delete" style="background:none; border:none; color:#ff9a9a; cursor:pointer; font-size:13px;">✕</button>
       `;
-      const chk = div.querySelector('input');
+      const chk = div.querySelector('.site-master');
       chk.onchange = (e) => {
         autoApi.toggleSite(host, e.target.checked).then(refreshAutoState);
       };
-      const delBtn = div.querySelector('button');
+      div.querySelectorAll('input[data-action]').forEach((actionChk) => {
+        actionChk.onchange = (e) => {
+          autoApi.setSiteAction(host, e.target.dataset.action, e.target.checked).then(refreshAutoState);
+        };
+      });
+      const delBtn = div.querySelector('.site-delete');
       delBtn.onclick = () => {
         delete autoState.sites[host];
-        autoApi.set({ sites: autoState.sites }).then(refreshAutoState);
+        delete autoState.siteActions[host];
+        autoApi.set({ sites: autoState.sites, siteActions: autoState.siteActions }).then(refreshAutoState);
       };
       sitesList.appendChild(div);
     }
