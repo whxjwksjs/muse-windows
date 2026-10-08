@@ -266,6 +266,7 @@ contextBridge.exposeInMainWorld('automationAPI', {
   toggle: () => ipcRenderer.invoke('automation-toggle'),
   toggleSite: (hostname, enabled) => ipcRenderer.invoke('automation-toggle-site', hostname, enabled),
   setAction: (actionKey, enabled) => ipcRenderer.invoke('automation-set-action', actionKey, enabled),
+  setSiteAction: (hostname, actionKey, enabled) => ipcRenderer.invoke('automation-set-site-action', hostname, actionKey, enabled),
   openSettings: () => ipcRenderer.invoke('open-settings'),
   onChanged: (callback) => {
     ipcRenderer.on('automation-changed', (e, state) => callback(state));
@@ -567,24 +568,22 @@ contextBridge.exposeInMainWorld('automationAPI', {
   ];
 
   function matchesActionCategory(text, containerText) {
-    if (autoState.autoAllowAll) return true;
+    if (!autoState.enabled || !isCurrentSiteAllowed()) return false;
     const combined = (text + ' ' + containerText).toLowerCase();
 
-    if (/connector|plugin|integration|oauth|auth|account/.test(combined)) {
-      return isActionAllowed('connectors');
-    }
-    if (/file|folder|document|read|write|download|upload/.test(combined)) {
-      return isActionAllowed('file_access');
-    }
-    if (/external|link|open in new|url|navigate/.test(combined)) {
-      return isActionAllowed('external_links');
-    }
-    if (/code|python|bash|script|execute|terminal|run/.test(combined)) {
-      return isActionAllowed('code_execution');
-    }
-    if (/mic|microphone|audio|camera|media/.test(combined)) {
-      return isActionAllowed('media_permissions');
-    }
+    // Match explicit approval/permission context instead of broad words such as
+    // "account", "read", or "run". Those words occur in ordinary chat UI too.
+    const strongConnector = /(?:connect|authorize|authorise|grant access|allow access|approve access|link account|sign in with|oauth|integration|connector|plugin)/.test(combined);
+    const strongFile = /(?:file access|folder access|access (?:your )?(?:files|documents|drive)|read (?:your )?(?:files|documents)|write to (?:your )?(?:files|documents)|upload (?:a |the )?file|download (?:a |the )?file)/.test(combined);
+    const strongLink = /(?:open (?:this )?(?:link|url)|open in (?:a )?new (?:tab|window)|external (?:link|site)|navigate to|leave (?:this )?site|open website)/.test(combined);
+    const strongCode = /(?:run|execute) (?:code|script|command)|code execution|terminal command|python code|shell command|bash command|run in terminal/.test(combined);
+    const strongMedia = /(?:microphone|mic|camera|audio|media) (?:access|permission)|allow (?:microphone|camera|audio|media)|grant (?:microphone|camera|audio|media) access|use (?:your )?(?:microphone|camera)/.test(combined);
+
+    if (strongConnector) return isActionAllowed('connectors');
+    if (strongFile) return isActionAllowed('file_access');
+    if (strongLink) return isActionAllowed('external_links');
+    if (strongCode) return isActionAllowed('code_execution');
+    if (strongMedia) return isActionAllowed('media_permissions');
     return false;
   }
 
