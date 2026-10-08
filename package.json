@@ -57,5 +57,5 @@
     "dist": "electron-builder --win portable nsis",
     "start": "electron ."
   },
-  "version": "1.4.0"
+  "version": "1.4.1"
 }
