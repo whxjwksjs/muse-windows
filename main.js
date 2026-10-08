@@ -313,6 +313,21 @@ function switchMetaAccount() {
 
 function switchMetaAccountById(id) {
   if (!state.profiles.some((p) => p.id === id)) return;
+  if (id === state.activeProfileId) {
+    if (state.site !== 'meta') {
+      state.site = 'meta';
+      saveState();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.setTitle(`${currentSite().name} (Muse desktop)`);
+        mainWindow.loadURL(currentSite().url);
+      } else {
+        createMainWindow();
+      }
+      showMainWindow();
+    }
+    buildTrayMenu();
+    return;
+  }
   state.site = 'meta';
   switchProfile(id);
 }
