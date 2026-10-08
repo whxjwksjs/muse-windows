@@ -10,4 +10,5 @@ contextBridge.exposeInMainWorld('automationAPI', {
   set: (updates) => ipcRenderer.invoke('automation-set', updates),
   toggleSite: (hostname, enabled) => ipcRenderer.invoke('automation-toggle-site', hostname, enabled),
   setAction: (actionKey, enabled) => ipcRenderer.invoke('automation-set-action', actionKey, enabled),
+  setSiteAction: (hostname, actionKey, enabled) => ipcRenderer.invoke('automation-set-site-action', hostname, actionKey, enabled),
 });
