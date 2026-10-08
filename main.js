@@ -396,6 +396,9 @@ ipcMain.handle('hotkeys-get', () => ({
 }));
 ipcMain.handle('hotkeys-set', (e, bindings) => applyHotkeys(bindings || {}));
 
+// Floating "Export chat" button in the page asks the main process to export.
+ipcMain.on('muse-export-request', () => exportChat());
+
 // ---- downloads & right-click menu -------------------------------------------
 // Electron shows no context menu on its own, so links can only be clicked
 // (navigating to them) rather than saved. This adds Save link/image as,

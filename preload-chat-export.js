@@ -1,8 +1,10 @@
 // Runs in an isolated world with full DOM access. Exposes a single chat
-// scraper to the main process via contextBridge. It never touches the
-// network and never modifies the page, except for a brief scroll used to
-// coax paginated history into the DOM (restored afterwards).
-const { contextBridge } = require('electron');
+// scraper to the main process via contextBridge, plus a small floating
+// "Export chat" button that asks the main process to run the export.
+// It never touches the network and never modifies the page content,
+// except for the floating button and a brief scroll used to coax
+// paginated history into the DOM (restored afterwards).
+const { contextBridge, ipcRenderer } = require('electron');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -257,3 +259,30 @@ async function scrapeChat() {
 contextBridge.exposeInMainWorld('museExport', {
   scrape: () => scrapeChat(),
 });
+
+// ---- floating export button -------------------------------------------------
+function injectExportButton() {
+  if (document.getElementById('muse-export-btn')) return;
+  const btn = document.createElement('button');
+  btn.id = 'muse-export-btn';
+  btn.type = 'button';
+  btn.textContent = '\u2913 Export chat';
+  btn.title = 'Export this chat to a file';
+  btn.style.cssText = [
+    'position:fixed', 'right:18px', 'bottom:18px', 'z-index:2147483647',
+    'padding:9px 14px', 'border-radius:999px', 'border:1px solid rgba(255,255,255,0.18)',
+    'background:rgba(20,20,24,0.92)', 'color:#fff',
+    'font:500 13px/1.2 system-ui,-apple-system,sans-serif', 'cursor:pointer',
+    'box-shadow:0 4px 16px rgba(0,0,0,0.35)',
+  ].join(';');
+  btn.addEventListener('mouseenter', () => { btn.style.background = 'rgba(52,52,60,0.95)'; });
+  btn.addEventListener('mouseleave', () => { btn.style.background = 'rgba(20,20,24,0.92)'; });
+  btn.addEventListener('click', (e) => { e.preventDefault(); ipcRenderer.send('muse-export-request'); });
+  (document.body || document.documentElement).appendChild(btn);
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', injectExportButton);
+} else {
+  injectExportButton();
+}
