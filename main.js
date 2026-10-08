@@ -281,11 +281,6 @@ function toggleSite() {
   buildTrayMenu();
 }
 
-function switchMetaAccount(id) {
-  if (state.site !== 'meta') state.site = 'meta';
-  switchProfile(id);
-}
-
 function switchNextMetaAccount() {
   if (!state.profiles.length) return;
   const current = state.profiles.findIndex((p) => p.id === state.activeProfileId);
