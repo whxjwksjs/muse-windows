@@ -1,0 +1,63 @@
+{
+  "author": "Gc",
+  "build": {
+    "appId": "ai.muse.desktop",
+    "compression": "maximum",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload-chat-export.js",
+      "preload-settings.js",
+      "hotkeys.html",
+      "assets/**/*",
+      "package.json"
+    ],
+    "nsis": {
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "oneClick": false,
+      "perMachine": false,
+      "shortcutName": "Muse"
+    },
+    "portable": {
+      "artifactName": "Muse-Portable-${version}.${ext}"
+    },
+    "productName": "Muse",
+    "publish": [
+      {
+        "owner": "whxjwksjs",
+        "provider": "github",
+        "repo": "muse-windows",
+        "releaseType": "release"
+      }
+    ],
+    "win": {
+      "icon": "assets/icon.ico",
+      "target": [
+        "portable",
+        "nsis"
+      ]
+    }
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
+  },
+  "description": "Muse for Windows: your personal AI agent in a desktop app",
+  "devDependencies": {
+    "electron": "^44.6.0",
+    "electron-builder": "^26.15.3"
+  },
+  "license": "UNLICENSED",
+  "main": "main.js",
+  "name": "muse-desktop",
+  "private": true,
+  "productName": "Muse",
+  "scripts": {
+    "dist": "electron-builder --win portable nsis",
+    "start": "electron ."
+  },
+  "version": "1.3.1"
+}

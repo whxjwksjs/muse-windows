@@ -1,0 +1,165 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Customize hotkeys</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 20px 22px;
+    font-family: "Segoe UI", system-ui, sans-serif;
+    background: #16181d; color: #e8eaf0;
+    user-select: none;
+  }
+  h2 { margin: 0 0 4px; font-size: 17px; font-weight: 600; }
+  .hint { margin: 0 0 16px; font-size: 12.5px; color: #9aa0ae; }
+  .row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 9px 0; border-bottom: 1px solid #262a33;
+  }
+  .row .name { font-size: 13.5px; }
+  .key {
+    min-width: 190px; text-align: center;
+    font-family: Consolas, monospace; font-size: 12.5px;
+    background: #23262e; color: #d7dbe4;
+    border: 1px solid #3a3f4b; border-radius: 6px;
+    padding: 7px 12px; cursor: pointer;
+  }
+  .key:hover { border-color: #5a6376; }
+  .key.capturing {
+    border-color: #7aa2ff; color: #fff;
+    animation: pulse 1s infinite;
+  }
+  @keyframes pulse { 50% { background: #2c3350; } }
+  .actions { display: flex; gap: 10px; margin-top: 18px; }
+  button.action {
+    flex: 1; padding: 9px 0; font-size: 13.5px;
+    border-radius: 6px; cursor: pointer; border: 1px solid #3a3f4b;
+    background: #23262e; color: #e8eaf0;
+  }
+  button.action.primary { background: #3b5bfd; border-color: #3b5bfd; color: #fff; }
+  button.action:disabled { opacity: 0.45; cursor: default; }
+  #msg { margin-top: 12px; font-size: 12.5px; min-height: 18px; }
+  #msg.ok { color: #7ee2a8; }
+  #msg.err { color: #ff9a9a; }
+</style>
+</head>
+<body>
+  <h2>Hotkeys</h2>
+  <p class="hint">Click a hotkey, then press the new combination. Esc cancels.</p>
+  <div id="rows"></div>
+  <div class="actions">
+    <button class="action" id="reset">Reset defaults</button>
+    <button class="action primary" id="save" disabled>Save</button>
+  </div>
+  <p id="msg"></p>
+
+<script>
+const api = window.hotkeyAPI;
+let labels = {}, defaults = {};
+let saved = {}, pending = {}, capturing = null;
+
+const pretty = (acc) => String(acc || '').replace('CommandOrControl', 'Ctrl');
+
+function comboFromEvent(e) {
+  const parts = [];
+  if (e.ctrlKey) parts.push('Ctrl');
+  if (e.altKey) parts.push('Alt');
+  if (e.shiftKey) parts.push('Shift');
+  if (e.metaKey) parts.push('Super');
+  let k = e.key;
+  if (k === ' ') k = 'Space';
+  else if (k === 'ArrowUp') k = 'Up';
+  else if (k === 'ArrowDown') k = 'Down';
+  else if (k === 'ArrowLeft') k = 'Left';
+  else if (k === 'ArrowRight') k = 'Right';
+  else if (k.length === 1) k = k.toUpperCase();
+  parts.push(k);
+  return parts.join('+');
+}
+
+const MODIFIER_KEYS = ['Control', 'Shift', 'Alt', 'Meta', 'AltGraph'];
+
+function render() {
+  const rows = document.getElementById('rows');
+  rows.innerHTML = '';
+  for (const id of Object.keys(labels)) {
+    const row = document.createElement('div');
+    row.className = 'row';
+    const name = document.createElement('span');
+    name.className = 'name';
+    name.textContent = labels[id];
+    const btn = document.createElement('button');
+    btn.className = 'key' + (capturing === id ? ' capturing' : '');
+    btn.textContent = capturing === id ? 'Press keys… (Esc cancels)' : pretty(pending[id]);
+    btn.onclick = () => {
+      capturing = (capturing === id) ? null : id;
+      setMsg('');
+      render();
+    };
+    row.appendChild(name);
+    row.appendChild(btn);
+    rows.appendChild(row);
+  }
+  const dirty = Object.keys(labels).some((id) => pending[id] !== saved[id]);
+  document.getElementById('save').disabled = !dirty;
+}
+
+function setMsg(text, cls) {
+  const m = document.getElementById('msg');
+  m.textContent = text;
+  m.className = cls || '';
+}
+
+window.addEventListener('keydown', (e) => {
+  if (!capturing) return;
+  e.preventDefault();
+  e.stopPropagation();
+  if (e.key === 'Escape') { capturing = null; render(); return; }
+  if (MODIFIER_KEYS.includes(e.key)) return; // wait for the real key
+  const combo = comboFromEvent(e);
+  const clash = Object.keys(pending).find((id) => id !== capturing && pending[id].toLowerCase() === combo.toLowerCase());
+  if (clash) {
+    setMsg(`"${pretty(combo)}" is already used by "${labels[clash]}".`, 'err');
+    return;
+  }
+  pending[capturing] = combo;
+  capturing = null;
+  setMsg('');
+  render();
+}, true);
+
+document.getElementById('save').onclick = async () => {
+  setMsg('Saving…');
+  const res = await api.set(pending);
+  if (res && res.ok) {
+    saved = { ...pending };
+    setMsg('Hotkeys saved.', 'ok');
+  } else {
+    setMsg((res && res.error) || 'Could not save hotkeys.', 'err');
+  }
+  render();
+};
+
+document.getElementById('reset').onclick = () => {
+  pending = { ...defaults };
+  capturing = null;
+  setMsg('');
+  render();
+};
+
+(async () => {
+  try {
+    const data = await api.get();
+    labels = data.labels;
+    defaults = data.defaults;
+    saved = { ...data.bindings };
+    pending = { ...data.bindings };
+    render();
+  } catch (err) {
+    setMsg('Could not load hotkeys: ' + err, 'err');
+  }
+})();
+</script>
+</body>
+</html>
