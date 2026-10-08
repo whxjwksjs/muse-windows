@@ -13,6 +13,7 @@ const DEFAULT_HOTKEYS = {
   export: 'CommandOrControl+Shift+E',
   mic: 'CommandOrControl+Shift+U',
   speaker: 'CommandOrControl+Shift+O',
+  automation: 'CommandOrControl+Shift+A',
 };
 const HOTKEY_LABELS = {
   quick: 'Quick chat popup',
@@ -20,6 +21,7 @@ const HOTKEY_LABELS = {
   export: 'Export this chat',
   mic: 'Mute / unmute microphone',
   speaker: 'Mute / unmute app sound',
+  automation: 'Toggle automation (Auto-Allow)',
 };
 const HOTKEY_ACTIONS = {
   quick: () => toggleQuickWindow(),
@@ -27,6 +29,7 @@ const HOTKEY_ACTIONS = {
   export: () => exportChat(),
   mic: () => toggleMic(),
   speaker: () => toggleSpeaker(),
+  automation: () => toggleAutomationMaster(),
 };
 
 let mainWindow = null;
@@ -44,6 +47,22 @@ app.commandLine.appendSwitch('enable-gpu-rasterization');
 app.commandLine.appendSwitch('enable-zero-copy');
 
 // ---- persisted state ----------------------------------------------------
+function defaultAutomation() {
+  return {
+    enabled: false,
+    autoAllowAll: false,
+    showOnScreenWidget: true,
+    actions: {
+      connectors: true,
+      file_access: true,
+      external_links: true,
+      media_permissions: true,
+      code_execution: true,
+    },
+    sites: {},
+  };
+}
+
 function defaultState() {
   return {
     window: {},
@@ -51,6 +70,7 @@ function defaultState() {
     profiles: [{ id: 'default', name: 'Profile 1' }],
     activeProfileId: 'default',
     hotkeys: { ...DEFAULT_HOTKEYS },
+    automation: defaultAutomation(),
   };
 }
 const statePath = () => path.join(app.getPath('userData'), 'app-state.json');
@@ -59,6 +79,12 @@ function loadState() {
     const raw = JSON.parse(fs.readFileSync(statePath(), 'utf8'));
     const merged = { ...defaultState(), ...raw };
     merged.hotkeys = { ...DEFAULT_HOTKEYS, ...(raw.hotkeys || {}) };
+    merged.automation = {
+      ...defaultAutomation(),
+      ...(raw.automation || {}),
+      actions: { ...defaultAutomation().actions, ...((raw.automation && raw.automation.actions) || {}) },
+      sites: { ...((raw.automation && raw.automation.sites) || {}) },
+    };
     return merged;
   } catch {
     return defaultState();
@@ -264,16 +290,65 @@ function saveClipboardAsFile() {
 // ---- permissions ----------------------------------------------------------------
 // meta.ai's voice chat needs the microphone. Electron denies permission
 // requests by default, so grant audio capture, but only on our two sites.
+function isSiteAutomationAllowed(hostname) {
+  const auto = state.automation;
+  if (!auto.enabled) return false;
+  if (auto.autoAllowAll) return true;
+  if (!hostname) return true;
+  const normalized = hostname.toLowerCase();
+  if (auto.sites[normalized] !== undefined) {
+    return !!auto.sites[normalized];
+  }
+  return true; // Default allow for specific site if not explicitly disabled when automation is on
+}
+
+function notifyWebContentsAutomationChange() {
+  const windows = BrowserWindow.getAllWindows();
+  for (const win of windows) {
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('automation-changed', state.automation);
+    }
+  }
+}
+
+function toggleAutomationMaster(forcedValue) {
+  state.automation.enabled = typeof forcedValue === 'boolean' ? forcedValue : !state.automation.enabled;
+  saveState();
+  buildTrayMenu();
+  notifyWebContentsAutomationChange();
+  notify(
+    state.automation.enabled ? 'Automation Active' : 'Automation Disabled',
+    state.automation.enabled
+      ? 'Auto-allow rules & shortcuts are active.'
+      : 'Auto-allow features have been paused.'
+  );
+}
+
 function setupPermissions(profileId) {
   const ses = session.fromPartition(partitionFor(profileId));
   ses.setPermissionRequestHandler((webContents, permission, callback) => {
     let url = '';
     try { url = webContents.getURL(); } catch { /* ignore */ }
     const ours = /^https:\/\/(www\.)?(muse\.ai|meta\.ai)(\/|$)/.test(url);
+
+    let hostname = '';
+    try { hostname = new URL(url).hostname; } catch { /* ignore */ }
+
     // Mic for voice chat, clipboard for the site's own copy buttons.
-    // Everything else (geolocation, notifications, etc.) stays denied.
-    const allowed = permission === 'media' || permission === 'audioCapture' ||
+    let allowed = permission === 'media' || permission === 'audioCapture' ||
       permission === 'clipboard-read' || permission === 'clipboard-sanitized-write';
+
+    // If master automation is on, evaluate media_permissions and site rule
+    if (state.automation.enabled) {
+      if (!isSiteAutomationAllowed(hostname)) {
+        allowed = false;
+      } else if (state.automation.autoAllowAll) {
+        allowed = true;
+      } else if ((permission === 'media' || permission === 'audioCapture') && state.automation.actions.media_permissions) {
+        allowed = true;
+      }
+    }
+
     callback(ours && allowed);
   });
 }
@@ -395,6 +470,67 @@ ipcMain.handle('hotkeys-get', () => ({
   defaults: { ...DEFAULT_HOTKEYS },
 }));
 ipcMain.handle('hotkeys-set', (e, bindings) => applyHotkeys(bindings || {}));
+
+// Automation IPC handlers
+ipcMain.handle('automation-get', () => ({
+  ...state.automation,
+  currentSiteUrl: mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents.getURL() : '',
+}));
+
+ipcMain.handle('automation-set', (e, updates) => {
+  if (!updates || typeof updates !== 'object') return { ok: false };
+  if (typeof updates.enabled === 'boolean') state.automation.enabled = updates.enabled;
+  if (typeof updates.autoAllowAll === 'boolean') state.automation.autoAllowAll = updates.autoAllowAll;
+  if (typeof updates.showOnScreenWidget === 'boolean') state.automation.showOnScreenWidget = updates.showOnScreenWidget;
+  if (updates.actions && typeof updates.actions === 'object') {
+    state.automation.actions = { ...state.automation.actions, ...updates.actions };
+  }
+  if (updates.sites && typeof updates.sites === 'object') {
+    state.automation.sites = { ...updates.sites };
+  }
+  saveState();
+  buildTrayMenu();
+  notifyWebContentsAutomationChange();
+  return { ok: true, state: state.automation };
+});
+
+ipcMain.handle('automation-toggle', () => {
+  toggleAutomationMaster();
+  return { ok: true, enabled: state.automation.enabled };
+});
+
+ipcMain.handle('automation-toggle-site', (e, hostname, enabled) => {
+  if (!hostname) return { ok: false, error: 'No hostname provided' };
+  const norm = hostname.toLowerCase();
+  if (typeof enabled === 'boolean') {
+    state.automation.sites[norm] = enabled;
+  } else {
+    const current = isSiteAutomationAllowed(norm);
+    state.automation.sites[norm] = !current;
+  }
+  saveState();
+  buildTrayMenu();
+  notifyWebContentsAutomationChange();
+  return { ok: true, allowed: isSiteAutomationAllowed(norm), sites: state.automation.sites };
+});
+
+ipcMain.handle('automation-set-action', (e, actionKey, enabled) => {
+  if (state.automation.actions[actionKey] !== undefined) {
+    state.automation.actions[actionKey] = !!enabled;
+    saveState();
+    buildTrayMenu();
+    notifyWebContentsAutomationChange();
+    return { ok: true, actions: state.automation.actions };
+  }
+  return { ok: false, error: 'Unknown action' };
+});
+
+ipcMain.handle('open-settings', () => {
+  openHotkeySettings();
+  return { ok: true };
+});
+// Floating "Export chat" button in the page asks the main process to export.
+ipcMain.on('muse-export-request', () => exportChat());
 
 // ---- downloads & right-click menu -------------------------------------------
 // Electron shows no context menu on its own, so links can only be clicked
@@ -680,10 +816,64 @@ function buildTrayMenu() {
     click: () => switchProfile(p.id),
   }));
 
+  let currentHostname = 'muse.ai';
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      currentHostname = new URL(mainWindow.webContents.getURL()).hostname;
+    }
+  } catch { /* ignore */ }
+
   const template = [
     { label: 'Open Muse', click: showMainWindow },
     { label: `Quick chat  (${prettyHotkey(state.hotkeys.quick)})`, click: toggleQuickWindow },
     { label: `Switch to ${otherSite.name}  (${prettyHotkey(state.hotkeys.site)})`, click: toggleSite },
+    { type: 'separator' },
+    {
+      label: 'Automation / Auto-Allow',
+      submenu: [
+        {
+          label: `Master Automation (${prettyHotkey(state.hotkeys.automation)})`,
+          type: 'checkbox',
+          checked: state.automation.enabled,
+          click: () => toggleAutomationMaster(),
+        },
+        {
+          label: 'Auto-Allow All Actions',
+          type: 'checkbox',
+          checked: state.automation.autoAllowAll,
+          click: (item) => {
+            state.automation.autoAllowAll = item.checked;
+            saveState();
+            buildTrayMenu();
+            notifyWebContentsAutomationChange();
+          },
+        },
+        {
+          label: `Always allow on ${currentHostname}`,
+          type: 'checkbox',
+          checked: isSiteAutomationAllowed(currentHostname),
+          click: (item) => {
+            state.automation.sites[currentHostname.toLowerCase()] = item.checked;
+            saveState();
+            buildTrayMenu();
+            notifyWebContentsAutomationChange();
+          },
+        },
+        { type: 'separator' },
+        {
+          label: 'Show On-Screen Widget',
+          type: 'checkbox',
+          checked: state.automation.showOnScreenWidget,
+          click: (item) => {
+            state.automation.showOnScreenWidget = item.checked;
+            saveState();
+            buildTrayMenu();
+            notifyWebContentsAutomationChange();
+          },
+        },
+        { label: 'Settings & Keybinds…', click: openHotkeySettings },
+      ],
+    },
     { type: 'separator' },
     {
       label: `Profile: ${activeProfile().name}`,
@@ -699,7 +889,7 @@ function buildTrayMenu() {
     { type: 'separator' },
     { label: `Mute / unmute microphone  (${prettyHotkey(state.hotkeys.mic)})`, click: toggleMic },
     { label: `Mute / unmute app sound  (${prettyHotkey(state.hotkeys.speaker)})`, click: toggleSpeaker },
-    { label: 'Customize hotkeys…', click: openHotkeySettings },
+    { label: 'Customize hotkeys & settings…', click: openHotkeySettings },
     { type: 'separator' },
     {
       label: 'Run on startup',

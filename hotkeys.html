@@ -2,28 +2,41 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>Customize hotkeys</title>
+<title>Settings & Hotkeys</title>
 <style>
   * { box-sizing: border-box; }
   body {
-    margin: 0; padding: 20px 22px;
+    margin: 0; padding: 18px 20px;
     font-family: "Segoe UI", system-ui, sans-serif;
     background: #16181d; color: #e8eaf0;
     user-select: none;
+    overflow-y: auto;
   }
-  h2 { margin: 0 0 4px; font-size: 17px; font-weight: 600; }
-  .hint { margin: 0 0 16px; font-size: 12.5px; color: #9aa0ae; }
+  .tabs {
+    display: flex; gap: 8px; border-bottom: 1px solid #262a33;
+    padding-bottom: 10px; margin-bottom: 14px;
+  }
+  .tab-btn {
+    background: transparent; border: none; color: #9aa0ae;
+    padding: 6px 12px; font-size: 13.5px; font-weight: 600;
+    border-radius: 6px; cursor: pointer;
+  }
+  .tab-btn.active { background: #23262e; color: #7aa2ff; }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+  h2 { margin: 0 0 4px; font-size: 16.5px; font-weight: 600; }
+  .hint { margin: 0 0 14px; font-size: 12px; color: #9aa0ae; }
   .row {
     display: flex; align-items: center; justify-content: space-between;
-    padding: 9px 0; border-bottom: 1px solid #262a33;
+    padding: 8px 0; border-bottom: 1px solid #262a33;
   }
-  .row .name { font-size: 13.5px; }
+  .row .name { font-size: 13px; }
   .key {
-    min-width: 190px; text-align: center;
-    font-family: Consolas, monospace; font-size: 12.5px;
+    min-width: 180px; text-align: center;
+    font-family: Consolas, monospace; font-size: 12px;
     background: #23262e; color: #d7dbe4;
     border: 1px solid #3a3f4b; border-radius: 6px;
-    padding: 7px 12px; cursor: pointer;
+    padding: 6px 10px; cursor: pointer;
   }
   .key:hover { border-color: #5a6376; }
   .key.capturing {
@@ -31,28 +44,125 @@
     animation: pulse 1s infinite;
   }
   @keyframes pulse { 50% { background: #2c3350; } }
-  .actions { display: flex; gap: 10px; margin-top: 18px; }
+  .actions { display: flex; gap: 10px; margin-top: 16px; }
   button.action {
-    flex: 1; padding: 9px 0; font-size: 13.5px;
+    flex: 1; padding: 8px 0; font-size: 13px;
     border-radius: 6px; cursor: pointer; border: 1px solid #3a3f4b;
     background: #23262e; color: #e8eaf0;
   }
   button.action.primary { background: #3b5bfd; border-color: #3b5bfd; color: #fff; }
   button.action:disabled { opacity: 0.45; cursor: default; }
-  #msg { margin-top: 12px; font-size: 12.5px; min-height: 18px; }
+  #msg { margin-top: 10px; font-size: 12px; min-height: 18px; }
   #msg.ok { color: #7ee2a8; }
   #msg.err { color: #ff9a9a; }
+
+  /* Automation settings styles */
+  .section-title {
+    font-size: 12px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.5px; color: #7aa2ff; margin: 12px 0 6px;
+  }
+  .auto-card {
+    background: #1d2028; border: 1px solid #292d38;
+    border-radius: 8px; padding: 10px 12px; margin-bottom: 10px;
+  }
+  .auto-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 6px 0; border-bottom: 1px solid #262a33; font-size: 12.5px;
+  }
+  .auto-row:last-child { border-bottom: none; }
+  .auto-row span.sub { font-size: 11px; color: #8a909d; display: block; }
+  .toggle-switch { cursor: pointer; width: 16px; height: 16px; }
+  .site-item {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 4px 0; font-size: 12px;
+  }
+  .site-input-group {
+    display: flex; gap: 6px; margin-top: 8px;
+  }
+  .site-input {
+    flex: 1; background: #23262e; border: 1px solid #3a3f4b;
+    color: #e8eaf0; padding: 4px 8px; border-radius: 4px; font-size: 12px;
+  }
 </style>
 </head>
 <body>
-  <h2>Hotkeys</h2>
-  <p class="hint">Click a hotkey, then press the new combination. Esc cancels.</p>
-  <div id="rows"></div>
-  <div class="actions">
-    <button class="action" id="reset">Reset defaults</button>
-    <button class="action primary" id="save" disabled>Save</button>
+  <div class="tabs">
+    <button class="tab-btn active" id="tab-hotkeys-btn">Hotkeys</button>
+    <button class="tab-btn" id="tab-auto-btn">Automation & Rules</button>
   </div>
-  <p id="msg"></p>
+
+  <div class="tab-content active" id="tab-hotkeys">
+    <h2>Global Hotkeys</h2>
+    <p class="hint">Click a hotkey, then press the new combination. Esc cancels.</p>
+    <div id="rows"></div>
+    <div class="actions">
+      <button class="action" id="reset">Reset defaults</button>
+      <button class="action primary" id="save" disabled>Save</button>
+    </div>
+    <p id="msg"></p>
+  </div>
+
+  <div class="tab-content" id="tab-auto">
+    <h2>Automation & Auto-Allow</h2>
+    <p class="hint">Allow automated prompt approvals for connectors and actions across websites.</p>
+
+    <div class="auto-card">
+      <div class="auto-row">
+        <div>
+          <span>Enable Automation</span>
+          <span class="sub">Master switch for all auto-approval features</span>
+        </div>
+        <input type="checkbox" id="chk-auto-master" class="toggle-switch">
+      </div>
+      <div class="auto-row">
+        <div>
+          <span>Auto-Allow All Actions</span>
+          <span class="sub">Bypass individual action filters and approve everything</span>
+        </div>
+        <input type="checkbox" id="chk-auto-allowall" class="toggle-switch">
+      </div>
+      <div class="auto-row">
+        <div>
+          <span>On-Screen Badge & Widget</span>
+          <span class="sub">Show quick-toggle overlay badge on web pages</span>
+        </div>
+        <input type="checkbox" id="chk-auto-widget" class="toggle-switch">
+      </div>
+    </div>
+
+    <div class="section-title">Connector & Action Controls</div>
+    <div class="auto-card">
+      <div class="auto-row">
+        <span>Connectors & Plugins</span>
+        <input type="checkbox" id="chk-act-connectors" class="toggle-switch">
+      </div>
+      <div class="auto-row">
+        <span>File & Data Access</span>
+        <input type="checkbox" id="chk-act-file" class="toggle-switch">
+      </div>
+      <div class="auto-row">
+        <span>External Link Navigation</span>
+        <input type="checkbox" id="chk-act-links" class="toggle-switch">
+      </div>
+      <div class="auto-row">
+        <span>Code Execution (Terminal / Scripts)</span>
+        <input type="checkbox" id="chk-act-code" class="toggle-switch">
+      </div>
+      <div class="auto-row">
+        <span>Media & Microphone Requests</span>
+        <input type="checkbox" id="chk-act-media" class="toggle-switch">
+      </div>
+    </div>
+
+    <div class="section-title">Per-Website Permissions</div>
+    <div class="auto-card">
+      <div id="site-rules-list"></div>
+      <div class="site-input-group">
+        <input type="text" id="site-add-input" class="site-input" placeholder="e.g. custom-ai.com">
+        <button id="site-add-btn" class="action" style="flex:0; padding:4px 12px;">Add</button>
+      </div>
+    </div>
+  </div>
 
 <script>
 const api = window.hotkeyAPI;
@@ -148,6 +258,124 @@ document.getElementById('reset').onclick = () => {
   render();
 };
 
+// --- Automation Settings Page Logic ---
+const autoApi = window.automationAPI;
+let autoState = null;
+
+function renderAutomationUI() {
+  if (!autoState) return;
+  document.getElementById('chk-auto-master').checked = !!autoState.enabled;
+  document.getElementById('chk-auto-allowall').checked = !!autoState.autoAllowAll;
+  document.getElementById('chk-auto-widget').checked = !!autoState.showOnScreenWidget;
+
+  const acts = autoState.actions || {};
+  document.getElementById('chk-act-connectors').checked = !!acts.connectors;
+  document.getElementById('chk-act-file').checked = !!acts.file_access;
+  document.getElementById('chk-act-links').checked = !!acts.external_links;
+  document.getElementById('chk-act-code').checked = !!acts.code_execution;
+  document.getElementById('chk-act-media').checked = !!acts.media_permissions;
+
+  const sitesList = document.getElementById('site-rules-list');
+  sitesList.innerHTML = '';
+  const sites = autoState.sites || {};
+  const entries = Object.keys(sites);
+
+  if (!entries.length) {
+    sitesList.innerHTML = '<div style="font-size:12px; color:#8a909d;">No per-site overrides configured.</div>';
+  } else {
+    for (const host of entries) {
+      const allowed = sites[host];
+      const div = document.createElement('div');
+      div.className = 'site-item';
+      div.innerHTML = `
+        <span>${host}</span>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <input type="checkbox" ${allowed ? 'checked' : ''} class="toggle-switch">
+          <button style="background:none; border:none; color:#ff9a9a; cursor:pointer; font-size:13px;">✕</button>
+        </div>
+      `;
+      const chk = div.querySelector('input');
+      chk.onchange = (e) => {
+        autoApi.toggleSite(host, e.target.checked).then(refreshAutoState);
+      };
+      const delBtn = div.querySelector('button');
+      delBtn.onclick = () => {
+        delete autoState.sites[host];
+        autoApi.set({ sites: autoState.sites }).then(refreshAutoState);
+      };
+      sitesList.appendChild(div);
+    }
+  }
+}
+
+async function refreshAutoState() {
+  if (!autoApi) return;
+  try {
+    autoState = await autoApi.get();
+    renderAutomationUI();
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+// Bind automation controls
+document.getElementById('chk-auto-master').onchange = (e) => {
+  autoApi.set({ enabled: e.target.checked }).then(refreshAutoState);
+};
+document.getElementById('chk-auto-allowall').onchange = (e) => {
+  autoApi.set({ autoAllowAll: e.target.checked }).then(refreshAutoState);
+};
+document.getElementById('chk-auto-widget').onchange = (e) => {
+  autoApi.set({ showOnScreenWidget: e.target.checked }).then(refreshAutoState);
+};
+
+document.getElementById('chk-act-connectors').onchange = (e) => {
+  autoApi.setAction('connectors', e.target.checked).then(refreshAutoState);
+};
+document.getElementById('chk-act-file').onchange = (e) => {
+  autoApi.setAction('file_access', e.target.checked).then(refreshAutoState);
+};
+document.getElementById('chk-act-links').onchange = (e) => {
+  autoApi.setAction('external_links', e.target.checked).then(refreshAutoState);
+};
+document.getElementById('chk-act-code').onchange = (e) => {
+  autoApi.setAction('code_execution', e.target.checked).then(refreshAutoState);
+};
+document.getElementById('chk-act-media').onchange = (e) => {
+  autoApi.setAction('media_permissions', e.target.checked).then(refreshAutoState);
+};
+
+document.getElementById('site-add-btn').onclick = () => {
+  const input = document.getElementById('site-add-input');
+  const val = (input.value || '').trim().toLowerCase();
+  if (!val) return;
+  autoApi.toggleSite(val, true).then(() => {
+    input.value = '';
+    refreshAutoState();
+  });
+};
+
+// Tabs
+const tabHotkeysBtn = document.getElementById('tab-hotkeys-btn');
+const tabAutoBtn = document.getElementById('tab-auto-btn');
+const tabHotkeys = document.getElementById('tab-hotkeys');
+const tabAuto = document.getElementById('tab-auto');
+
+tabHotkeysBtn.onclick = () => {
+  tabHotkeysBtn.classList.add('active');
+  tabAutoBtn.classList.remove('active');
+  tabHotkeys.classList.add('active');
+  tabAuto.classList.remove('active');
+};
+
+tabAutoBtn.onclick = () => {
+  tabAutoBtn.classList.add('active');
+  tabHotkeysBtn.classList.remove('active');
+  tabAuto.classList.add('active');
+  tabHotkeys.classList.remove('active');
+  refreshAutoState();
+};
+
 (async () => {
   try {
     const data = await api.get();
@@ -156,6 +384,7 @@ document.getElementById('reset').onclick = () => {
     saved = { ...data.bindings };
     pending = { ...data.bindings };
     render();
+    refreshAutoState();
   } catch (err) {
     setMsg('Could not load hotkeys: ' + err, 'err');
   }
