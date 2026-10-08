@@ -23,6 +23,7 @@ your chat with Muse in a desktop window.
 - **Right-click menu + downloads**: Save link as / Save image as / Copy link
   address, standard cut-copy-paste. Downloads ask where to save and notify on
   completion.
+- **Automation / Auto-Allow controls**: automation is opt-in and off by default. A remappable global hotkey, tray controls, and an on-screen widget can toggle the master switch. Auto-Allow All is explicit, and per-site rules can be set for individual connector/action categories. Any automation can be disabled from the same controls.
 - **Mic / speaker toggles + customizable hotkeys**: tray menu or global
   hotkeys mute the microphone (for voice chat) and the app's speaker.
   "Customize hotkeys…" opens a settings screen where every global hotkey can
