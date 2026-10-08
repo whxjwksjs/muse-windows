@@ -60,6 +60,7 @@ function defaultAutomation() {
       code_execution: true,
     },
     sites: {},
+    siteActions: {},
   };
 }
 
@@ -84,6 +85,7 @@ function loadState() {
       ...(raw.automation || {}),
       actions: { ...defaultAutomation().actions, ...((raw.automation && raw.automation.actions) || {}) },
       sites: { ...((raw.automation && raw.automation.sites) || {}) },
+      siteActions: { ...((raw.automation && raw.automation.siteActions) || {}) },
     };
     return merged;
   } catch {
@@ -294,12 +296,19 @@ function isSiteAutomationAllowed(hostname) {
   const auto = state.automation;
   if (!auto.enabled) return false;
   if (auto.autoAllowAll) return true;
-  if (!hostname) return true;
+  if (!hostname) return false;
   const normalized = hostname.toLowerCase();
-  if (auto.sites[normalized] !== undefined) {
-    return !!auto.sites[normalized];
-  }
-  return true; // Default allow for specific site if not explicitly disabled when automation is on
+  return auto.sites[normalized] === true;
+}
+
+function isAutomationActionAllowed(actionKey, hostname) {
+  if (!state.automation.enabled) return false;
+  if (state.automation.autoAllowAll) return true;
+  if (!isSiteAutomationAllowed(hostname)) return false;
+  const normalized = String(hostname || '').toLowerCase();
+  const siteRules = state.automation.siteActions[normalized];
+  if (siteRules && siteRules[actionKey] !== undefined) return !!siteRules[actionKey];
+  return state.automation.actions[actionKey] === true;
 }
 
 function notifyWebContentsAutomationChange() {
@@ -338,15 +347,8 @@ function setupPermissions(profileId) {
     let allowed = permission === 'media' || permission === 'audioCapture' ||
       permission === 'clipboard-read' || permission === 'clipboard-sanitized-write';
 
-    // If master automation is on, evaluate media_permissions and site rule
-    if (state.automation.enabled) {
-      if (!isSiteAutomationAllowed(hostname)) {
-        allowed = false;
-      } else if (state.automation.autoAllowAll) {
-        allowed = true;
-      } else if ((permission === 'media' || permission === 'audioCapture') && state.automation.actions.media_permissions) {
-        allowed = true;
-      }
+    if (state.automation.enabled && (permission === 'media' || permission === 'audioCapture')) {
+      allowed = isAutomationActionAllowed('media_permissions', hostname);
     }
 
     callback(ours && allowed);
@@ -512,6 +514,16 @@ ipcMain.handle('automation-toggle-site', (e, hostname, enabled) => {
   buildTrayMenu();
   notifyWebContentsAutomationChange();
   return { ok: true, allowed: isSiteAutomationAllowed(norm), sites: state.automation.sites };
+});
+
+ipcMain.handle('automation-set-site-action', (e, hostname, actionKey, enabled) => {
+  if (!hostname || state.automation.actions[actionKey] === undefined) return { ok: false, error: 'Unknown site or action' };
+  const norm = String(hostname).toLowerCase();
+  state.automation.siteActions[norm] = { ...(state.automation.siteActions[norm] || {}), [actionKey]: !!enabled };
+  saveState();
+  buildTrayMenu();
+  notifyWebContentsAutomationChange();
+  return { ok: true, siteActions: state.automation.siteActions };
 });
 
 ipcMain.handle('automation-set-action', (e, actionKey, enabled) => {
