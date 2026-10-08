@@ -454,7 +454,7 @@ function openHotkeySettings() {
   if (hotkeyWindow && !hotkeyWindow.isDestroyed()) { hotkeyWindow.focus(); return; }
   hotkeyWindow = new BrowserWindow({
     width: 460,
-    height: 480,
+    height: 640,
     title: 'Customize hotkeys',
     resizable: false,
     minimizable: false,
