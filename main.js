@@ -555,6 +555,9 @@ ipcMain.handle('automation-set', (e, updates) => {
   if (updates.sites && typeof updates.sites === 'object') {
     state.automation.sites = { ...updates.sites };
   }
+  if (updates.siteActions && typeof updates.siteActions === 'object') {
+    state.automation.siteActions = { ...updates.siteActions };
+  }
   saveState();
   buildTrayMenu();
   notifyWebContentsAutomationChange();
@@ -881,6 +884,14 @@ function setupAutoUpdate() {
 
 // ---- tray -----------------------------------------------------------------
 const prettyHotkey = (acc) => String(acc || '').replace('CommandOrControl', 'Ctrl');
+function setGlobalAutomationAction(actionKey, enabled) {
+  if (state.automation.actions[actionKey] === undefined) return;
+  state.automation.actions[actionKey] = !!enabled;
+  saveState();
+  buildTrayMenu();
+  notifyWebContentsAutomationChange();
+}
+
 function buildTrayMenu() {
   if (!tray) return;
   const otherSite = state.site === 'muse' ? SITES.meta : SITES.muse;
@@ -931,7 +942,7 @@ function buildTrayMenu() {
           click: () => toggleAutomationMaster(),
         },
         {
-          label: 'Auto-Allow All Actions',
+          label: 'Allow all actions',
           type: 'checkbox',
           checked: state.automation.autoAllowAll,
           click: (item) => {
@@ -942,15 +953,52 @@ function buildTrayMenu() {
           },
         },
         {
-          label: `Always allow on ${currentHostname}`,
-          type: 'checkbox',
-          checked: isSiteAutomationAllowed(currentHostname),
-          click: (item) => {
-            state.automation.sites[currentHostname.toLowerCase()] = item.checked;
-            saveState();
-            buildTrayMenu();
-            notifyWebContentsAutomationChange();
-          },
+          label: 'This website',
+          submenu: [
+            {
+              label: `Always allow on ${currentHostname}`,
+              type: 'checkbox',
+              checked: !!state.automation.sites[currentHostname.toLowerCase()],
+              click: (item) => {
+                state.automation.sites[currentHostname.toLowerCase()] = item.checked;
+                saveState();
+                buildTrayMenu();
+                notifyWebContentsAutomationChange();
+              },
+            },
+            { type: 'separator' },
+            ...[
+              ['connectors', 'App / connector actions', 'Approve connection and integration prompts'],
+              ['file_access', 'File and data access', 'Approve file, upload, download, and data-access prompts'],
+              ['external_links', 'External navigation', 'Approve prompts to open links or navigate outside the chat'],
+              ['code_execution', 'Code execution', 'Approve prompts to run code, scripts, or terminal actions'],
+              ['media_permissions', 'Microphone and media', 'Approve microphone, camera, audio, and media permission requests'],
+            ].map(([key, label, hint]) => ({
+              label,
+              type: 'checkbox',
+              checked: state.automation.siteActions[currentHostname.toLowerCase()]?.[key] !== undefined
+                ? !!state.automation.siteActions[currentHostname.toLowerCase()][key]
+                : state.automation.actions[key] === true,
+              toolTip: hint,
+              click: (item) => {
+                const host = currentHostname.toLowerCase();
+                state.automation.siteActions[host] = { ...(state.automation.siteActions[host] || {}), [key]: item.checked };
+                saveState();
+                buildTrayMenu();
+                notifyWebContentsAutomationChange();
+              },
+            })),
+          ],
+        },
+        {
+          label: 'What can be auto-approved?',
+          submenu: [
+            { label: 'App / connector actions', type: 'checkbox', checked: !!state.automation.actions.connectors, click: (item) => setGlobalAutomationAction('connectors', item.checked) },
+            { label: 'File and data access', type: 'checkbox', checked: !!state.automation.actions.file_access, click: (item) => setGlobalAutomationAction('file_access', item.checked) },
+            { label: 'External navigation', type: 'checkbox', checked: !!state.automation.actions.external_links, click: (item) => setGlobalAutomationAction('external_links', item.checked) },
+            { label: 'Code execution', type: 'checkbox', checked: !!state.automation.actions.code_execution, click: (item) => setGlobalAutomationAction('code_execution', item.checked) },
+            { label: 'Microphone and media', type: 'checkbox', checked: !!state.automation.actions.media_permissions, click: (item) => setGlobalAutomationAction('media_permissions', item.checked) },
+          ],
         },
         { type: 'separator' },
         {
