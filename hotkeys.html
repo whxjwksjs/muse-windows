@@ -332,51 +332,80 @@ function renderAutomationUI() {
   }
 }
 
+let autoRefreshVersion = 0;
+let autoWriteQueue = Promise.resolve();
+
 async function refreshAutoState() {
   if (!autoApi) return;
+  const version = ++autoRefreshVersion;
   try {
-    autoState = await autoApi.get();
+    const latest = await autoApi.get();
+    // Ignore an older read that finished after a newer refresh/write.
+    if (version !== autoRefreshVersion) return;
+    autoState = latest;
     renderAutomationUI();
   } catch (err) {
     console.error(err);
   }
 }
 
+function updateAutomation(write, optimisticUpdate) {
+  if (!autoApi) return Promise.resolve();
+  if (autoState && optimisticUpdate) {
+    optimisticUpdate(autoState);
+    renderAutomationUI();
+  }
+  // Serialize writes so rapid checkbox clicks cannot overwrite each other
+  // with stale state returned by an earlier request.
+  autoWriteQueue = autoWriteQueue.then(async () => {
+    const result = await write();
+    if (result && result.ok === false) throw new Error(result.error || 'Automation setting was rejected');
+    await refreshAutoState();
+  }).catch((err) => {
+    console.error('Could not save automation setting:', err);
+    refreshAutoState();
+  });
+  return autoWriteQueue;
+}
+
 // Bind automation controls
 document.getElementById('chk-auto-master').onchange = (e) => {
-  autoApi.set({ enabled: e.target.checked }).then(refreshAutoState);
+  const checked = e.target.checked;
+  updateAutomation(() => autoApi.set({ enabled: checked }), (s) => { s.enabled = checked; });
 };
 document.getElementById('chk-auto-allowall').onchange = (e) => {
-  autoApi.set({ autoAllowAll: e.target.checked }).then(refreshAutoState);
+  const checked = e.target.checked;
+  updateAutomation(() => autoApi.set({ autoAllowAll: checked }), (s) => { s.autoAllowAll = checked; });
 };
 document.getElementById('chk-auto-widget').onchange = (e) => {
-  autoApi.set({ showOnScreenWidget: e.target.checked }).then(refreshAutoState);
+  const checked = e.target.checked;
+  updateAutomation(() => autoApi.set({ showOnScreenWidget: checked }), (s) => { s.showOnScreenWidget = checked; });
 };
 
-document.getElementById('chk-act-connectors').onchange = (e) => {
-  autoApi.setAction('connectors', e.target.checked).then(refreshAutoState);
-};
-document.getElementById('chk-act-file').onchange = (e) => {
-  autoApi.setAction('file_access', e.target.checked).then(refreshAutoState);
-};
-document.getElementById('chk-act-links').onchange = (e) => {
-  autoApi.setAction('external_links', e.target.checked).then(refreshAutoState);
-};
-document.getElementById('chk-act-code').onchange = (e) => {
-  autoApi.setAction('code_execution', e.target.checked).then(refreshAutoState);
-};
-document.getElementById('chk-act-media').onchange = (e) => {
-  autoApi.setAction('media_permissions', e.target.checked).then(refreshAutoState);
-};
+for (const [id, key] of [
+  ['chk-act-connectors', 'connectors'],
+  ['chk-act-file', 'file_access'],
+  ['chk-act-links', 'external_links'],
+  ['chk-act-code', 'code_execution'],
+  ['chk-act-media', 'media_permissions'],
+]) {
+  document.getElementById(id).onchange = (e) => {
+    const checked = e.target.checked;
+    updateAutomation(
+      () => autoApi.setAction(key, checked),
+      (s) => { s.actions = { ...(s.actions || {}), [key]: checked }; }
+    );
+  };
+}
 
 document.getElementById('site-add-btn').onclick = () => {
   const input = document.getElementById('site-add-input');
   const val = (input.value || '').trim().toLowerCase();
   if (!val) return;
-  autoApi.toggleSite(val, true).then(() => {
-    input.value = '';
-    refreshAutoState();
-  });
+  updateAutomation(
+    () => autoApi.toggleSite(val, true),
+    (s) => { s.sites = { ...(s.sites || {}), [val]: true }; }
+  ).then(() => { input.value = ''; });
 };
 
 // Tabs
