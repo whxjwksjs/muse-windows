@@ -314,18 +314,41 @@ function renderAutomationUI() {
       `;
       const chk = div.querySelector('.site-master');
       chk.onchange = (e) => {
-        autoApi.toggleSite(host, e.target.checked).then(refreshAutoState);
+        const checked = e.target.checked;
+        updateAutomation(
+          () => autoApi.toggleSite(host, checked),
+          (s) => { s.sites = { ...(s.sites || {}), [host]: checked }; }
+        );
       };
       div.querySelectorAll('input[data-action]').forEach((actionChk) => {
         actionChk.onchange = (e) => {
-          autoApi.setSiteAction(host, e.target.dataset.action, e.target.checked).then(refreshAutoState);
+          const key = e.target.dataset.action;
+          const checked = e.target.checked;
+          updateAutomation(
+            () => autoApi.setSiteAction(host, key, checked),
+            (s) => {
+              s.siteActions = { ...(s.siteActions || {}), [host]: { ...(s.siteActions?.[host] || {}), [key]: checked } };
+            }
+          );
         };
       });
       const delBtn = div.querySelector('.site-delete');
       delBtn.onclick = () => {
-        delete autoState.sites[host];
-        delete autoState.siteActions[host];
-        autoApi.set({ sites: autoState.sites, siteActions: autoState.siteActions }).then(refreshAutoState);
+        updateAutomation(
+          () => {
+            const sites = { ...(autoState?.sites || {}) };
+            const siteActions = { ...(autoState?.siteActions || {}) };
+            delete sites[host];
+            delete siteActions[host];
+            return autoApi.set({ sites, siteActions });
+          },
+          (s) => {
+            s.sites = { ...(s.sites || {}) };
+            s.siteActions = { ...(s.siteActions || {}) };
+            delete s.sites[host];
+            delete s.siteActions[host];
+          }
+        );
       };
       sitesList.appendChild(div);
     }
