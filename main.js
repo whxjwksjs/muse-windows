@@ -357,20 +357,21 @@ function saveClipboardAsFile() {
 // ---- permissions ----------------------------------------------------------------
 // meta.ai's voice chat needs the microphone. Electron denies permission
 // requests by default, so grant audio capture, but only on our two sites.
+const TRUSTED_AUTOMATION_HOSTS = new Set(['muse.ai', 'www.muse.ai', 'meta.ai', 'www.meta.ai']);
+
 function isSiteAutomationAllowed(hostname) {
   const auto = state.automation;
-  if (!auto.enabled) return false;
+  const normalized = String(hostname || '').toLowerCase();
+  if (!auto.enabled || !TRUSTED_AUTOMATION_HOSTS.has(normalized)) return false;
   if (auto.autoAllowAll) return true;
-  if (!hostname) return false;
-  const normalized = hostname.toLowerCase();
   return auto.sites[normalized] === true;
 }
 
 function isAutomationActionAllowed(actionKey, hostname) {
-  if (!state.automation.enabled) return false;
-  if (state.automation.autoAllowAll) return true;
-  if (!isSiteAutomationAllowed(hostname)) return false;
   const normalized = String(hostname || '').toLowerCase();
+  if (!state.automation.enabled || !TRUSTED_AUTOMATION_HOSTS.has(normalized)) return false;
+  if (state.automation.autoAllowAll) return true;
+  if (!isSiteAutomationAllowed(normalized)) return false;
   const siteRules = state.automation.siteActions[normalized];
   if (siteRules && siteRules[actionKey] !== undefined) return !!siteRules[actionKey];
   return state.automation.actions[actionKey] === true;
@@ -608,6 +609,30 @@ ipcMain.handle('automation-set-action', (e, actionKey, enabled) => {
 ipcMain.handle('open-settings', () => {
   openHotkeySettings();
   return { ok: true };
+});
+
+ipcMain.handle('muse-ui-get-state', () => ({ site: state.site, siteName: currentSite().name }));
+ipcMain.handle('muse-ui-switch-site', () => {
+  toggleSite();
+  return { site: state.site, siteName: currentSite().name };
+});
+ipcMain.handle('muse-ui-go-home', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (win && !win.isDestroyed()) {
+    win.loadURL(currentSite().url);
+    if (win === mainWindow) win.setTitle(`${currentSite().name} (Muse desktop)`);
+  }
+  return { ok: true, site: state.site };
+});
+ipcMain.handle('muse-ui-go-back', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win || win.isDestroyed()) return { ok: false };
+  if (win.webContents.canGoBack()) {
+    win.webContents.goBack();
+    return { ok: true, wentBack: true };
+  }
+  win.loadURL(currentSite().url);
+  return { ok: true, wentBack: false, returnedHome: true };
 });
 // Floating "Export chat" button in the page asks the main process to export.
 ipcMain.on('muse-export-request', () => exportChat());
