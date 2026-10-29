@@ -367,7 +367,24 @@ contextBridge.exposeInMainWorld('automationAPI', {
       fontFamily: '"Segoe UI", system-ui, sans-serif',
       fontSize: '12px',
       userSelect: 'none',
+      touchAction: 'none',
     });
+
+    // Restore the last dragged position for this website and clamp it to the viewport.
+    const positionKey = 'muse-automation-widget-position-v1';
+    const clampPosition = (x, y) => ({
+      x: Math.max(0, Math.min(Math.round(x), Math.max(0, window.innerWidth - widgetContainer.offsetWidth))),
+      y: Math.max(0, Math.min(Math.round(y), Math.max(0, window.innerHeight - widgetContainer.offsetHeight))),
+    });
+    try {
+      const savedPosition = JSON.parse(localStorage.getItem(positionKey) || 'null');
+      if (savedPosition && Number.isFinite(savedPosition.x) && Number.isFinite(savedPosition.y)) {
+        const pos = clampPosition(savedPosition.x, savedPosition.y);
+        widgetContainer.style.left = pos.x + 'px';
+        widgetContainer.style.top = pos.y + 'px';
+        widgetContainer.style.right = 'auto';
+      }
+    } catch { /* storage can be unavailable in some page contexts */ }
 
     const badge = document.createElement('button');
     badge.id = 'muse-automation-badge';
@@ -386,8 +403,50 @@ contextBridge.exposeInMainWorld('automationAPI', {
       fontWeight: '600',
     });
 
+    let widgetDrag = null;
+    let suppressWidgetClick = false;
+    badge.title = 'Click to open Auto-Allow controls. Drag to move this widget.';
+    badge.style.cursor = 'grab';
+    badge.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      widgetDrag = { pointerId: e.pointerId, startX: e.clientX, startY: e.clientY,
+        left: widgetContainer.getBoundingClientRect().left,
+        top: widgetContainer.getBoundingClientRect().top, moved: false };
+      try { badge.setPointerCapture(e.pointerId); } catch {}
+    });
+    badge.addEventListener('pointermove', (e) => {
+      if (!widgetDrag || widgetDrag.pointerId !== e.pointerId) return;
+      const dx = e.clientX - widgetDrag.startX;
+      const dy = e.clientY - widgetDrag.startY;
+      if (Math.abs(dx) + Math.abs(dy) > 4) widgetDrag.moved = true;
+      if (!widgetDrag.moved) return;
+      suppressWidgetClick = true;
+      const pos = clampPosition(widgetDrag.left + dx, widgetDrag.top + dy);
+      widgetContainer.style.left = pos.x + 'px';
+      widgetContainer.style.top = pos.y + 'px';
+      widgetContainer.style.right = 'auto';
+      badge.style.cursor = 'grabbing';
+    });
+    const finishWidgetDrag = (e) => {
+      if (!widgetDrag || widgetDrag.pointerId !== e.pointerId) return;
+      const wasMoved = widgetDrag.moved;
+      widgetDrag = null;
+      badge.style.cursor = 'grab';
+      if (wasMoved) {
+        const rect = widgetContainer.getBoundingClientRect();
+        try { localStorage.setItem(positionKey, JSON.stringify({ x: rect.left, y: rect.top })); } catch {}
+        setTimeout(() => { suppressWidgetClick = false; }, 0);
+      }
+    };
+    badge.addEventListener('pointerup', finishWidgetDrag);
+    badge.addEventListener('pointercancel', finishWidgetDrag);
     badge.addEventListener('click', (e) => {
       e.stopPropagation();
+      if (suppressWidgetClick) {
+        e.preventDefault();
+        suppressWidgetClick = false;
+        return;
+      }
       togglePanel();
     });
 
@@ -659,6 +718,89 @@ contextBridge.exposeInMainWorld('automationAPI', {
     startObserver();
   }
 })();
+// ---- download media playback ------------------------------------------------
+function injectMediaDownloadButton() {
+  if (document.getElementById('muse-media-download-btn')) return;
+  const mediaElements = () => Array.from(document.querySelectorAll('audio, video'))
+    .filter((el) => !!(el.currentSrc || el.src || el.querySelector('source[src]')));
+  let activeMedia = null;
+  const button = document.createElement('button');
+  button.id = 'muse-media-download-btn';
+  button.type = 'button';
+  button.textContent = '\u2913 Download media';
+  button.title = 'Download the currently selected Muse audio or video';
+  button.style.cssText = [
+    'position:fixed', 'right:18px', 'bottom:72px', 'z-index:2147483647',
+    'padding:9px 14px', 'border-radius:999px', 'border:1px solid rgba(255,255,255,0.18)',
+    'background:rgba(20,20,24,0.94)', 'color:#fff',
+    'font:500 13px/1.2 system-ui,-apple-system,sans-serif', 'cursor:pointer',
+    'box-shadow:0 4px 16px rgba(0,0,0,0.35)', 'display:none',
+  ].join(';');
+  const refresh = () => {
+    const media = mediaElements();
+    if (!activeMedia || !media.includes(activeMedia)) activeMedia = media[media.length - 1] || null;
+    button.style.display = activeMedia ? 'block' : 'none';
+  };
+  document.addEventListener('pointerdown', (event) => {
+    const media = event.target && event.target.closest && event.target.closest('audio, video');
+    if (media) { activeMedia = media; refresh(); }
+  }, true);
+  document.addEventListener('play', (event) => {
+    if (event.target && /^(AUDIO|VIDEO)$/.test(event.target.tagName)) {
+      activeMedia = event.target; refresh();
+    }
+  }, true);
+  button.addEventListener('click', async (event) => {
+    event.preventDefault(); event.stopPropagation();
+    const media = activeMedia || mediaElements().slice(-1)[0];
+    const url = media && (media.currentSrc || media.src || (media.querySelector('source[src]') || {}).src);
+    if (!url) return;
+    const suggestedName = (() => {
+      try {
+        const pathname = new URL(url, location.href).pathname;
+        const name = decodeURIComponent(pathname.split('/').pop() || '');
+        return name && /\.[a-z0-9]{2,6}$/i.test(name) ? name : 'muse-media-download';
+      } catch { return 'muse-media-download'; }
+    })();
+    button.disabled = true;
+    const originalText = button.textContent;
+    button.textContent = 'Preparing download…';
+    try {
+      if (url.startsWith('blob:')) {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('Could not read the media player data.');
+        const blob = await response.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = objectUrl;
+        link.download = suggestedName.includes('.') ? suggestedName : 'muse-media-download';
+        document.body.appendChild(link); link.click(); link.remove();
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 30000);
+      } else {
+        const result = await ipcRenderer.invoke('muse-download-media', url);
+        if (!result || !result.ok) throw new Error((result && result.error) || 'Download could not be started.');
+      }
+      button.textContent = 'Download started';
+      setTimeout(() => { button.textContent = originalText; }, 1800);
+    } catch (error) {
+      button.textContent = 'Download failed';
+      button.title = String(error && error.message || error);
+      setTimeout(() => { button.textContent = originalText; }, 2200);
+    } finally { button.disabled = false; }
+  });
+  const observer = new MutationObserver(refresh);
+  const start = () => {
+    (document.body || document.documentElement).appendChild(button);
+    observer.observe(document.body || document.documentElement, {
+      childList: true, subtree: true, attributes: true, attributeFilter: ['src']
+    });
+    refresh();
+  };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
+  else start();
+}
+injectMediaDownloadButton();
+
 // ---- floating export button -------------------------------------------------
 function injectExportButton() {
   if (document.getElementById('muse-export-btn')) return;
