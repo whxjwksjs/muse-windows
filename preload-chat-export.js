@@ -293,15 +293,20 @@ contextBridge.exposeInMainWorld('automationAPI', {
     siteActions: {},
   };
 
+  const TRUSTED_AUTOMATION_HOSTS = new Set(['muse.ai', 'www.muse.ai', 'meta.ai', 'www.meta.ai']);
+  function isTrustedAutomationPage() {
+    return TRUSTED_AUTOMATION_HOSTS.has(location.hostname.toLowerCase());
+  }
+
   function isCurrentSiteAllowed() {
-    if (!autoState.enabled) return false;
+    if (!autoState.enabled || !isTrustedAutomationPage()) return false;
     if (autoState.autoAllowAll) return true;
     const hostname = location.hostname.toLowerCase();
     return autoState.sites[hostname] === true;
   }
 
   function isActionAllowed(actionKey) {
-    if (!autoState.enabled) return false;
+    if (!autoState.enabled || !isTrustedAutomationPage()) return false;
     if (autoState.autoAllowAll) return true;
     if (!isCurrentSiteAllowed()) return false;
     const hostname = location.hostname.toLowerCase();
@@ -646,6 +651,7 @@ contextBridge.exposeInMainWorld('automationAPI', {
     const strongCode = /(?:run|execute) (?:code|script|command)|code execution|terminal command|python code|shell command|bash command|run in terminal/.test(combined);
     const strongMedia = /(?:microphone|mic|camera|audio|media) (?:access|permission)|allow (?:microphone|camera|audio|media)|grant (?:microphone|camera|audio|media) access|use (?:your )?(?:microphone|camera)/.test(combined);
 
+    if (strongConnector && /(?:connect|sign in|log in|authorize|authorise|oauth|link account|continue with)/.test(combined)) return false;
     if (strongConnector) return isActionAllowed('connectors');
     if (strongFile) return isActionAllowed('file_access');
     if (strongLink) return isActionAllowed('external_links');
@@ -707,9 +713,20 @@ contextBridge.exposeInMainWorld('automationAPI', {
     }
   });
 
-  // Observe page changes
-  const observer = new MutationObserver(() => {
-    checkAndAutoApprove();
+  // Coalesce busy chat DOM updates to avoid repeated full-page scans while streaming.
+  let approvalScanQueued = false;
+  const observer = new MutationObserver((mutations) => {
+    const relevant = mutations.some((mutation) => Array.from(mutation.addedNodes || []).some((node) => {
+      if (node.nodeType !== 1) return false;
+      return (node.matches && node.matches('button, a[role="button"], [role="dialog"], [role="button"]')) ||
+        (node.querySelector && node.querySelector('button, a[role="button"], [role="dialog"], [role="button"]'));
+    }));
+    if (!relevant || approvalScanQueued) return;
+    approvalScanQueued = true;
+    setTimeout(() => {
+      approvalScanQueued = false;
+      checkAndAutoApprove();
+    }, 180);
   });
 
   function startObserver() {
@@ -804,7 +821,12 @@ function injectMediaDownloadButton() {
       setTimeout(() => { button.textContent = originalText; }, 2200);
     } finally { button.disabled = false; }
   });
-  const observer = new MutationObserver(refresh);
+  let refreshQueued = false;
+  const observer = new MutationObserver(() => {
+    if (refreshQueued) return;
+    refreshQueued = true;
+    setTimeout(() => { refreshQueued = false; refresh(); }, 180);
+  });
   const start = () => {
     (document.body || document.documentElement).appendChild(button);
     observer.observe(document.body || document.documentElement, {
@@ -816,6 +838,45 @@ function injectMediaDownloadButton() {
   else start();
 }
 injectMediaDownloadButton();
+
+// ---- app navigation bar ------------------------------------------------------
+function injectAppNavigationBar() {
+  if (document.getElementById('muse-app-nav')) return;
+  const bar = document.createElement('div');
+  bar.id = 'muse-app-nav';
+  bar.style.cssText = ['position:fixed','top:10px','left:50%','transform:translateX(-50%)','z-index:2147483647','display:flex','align-items:center','gap:5px','padding:6px','border-radius:14px','border:1px solid rgba(255,255,255,.16)','background:rgba(18,20,26,.96)','box-shadow:0 5px 22px rgba(0,0,0,.32)','backdrop-filter:blur(10px)','font:600 12px/1.2 system-ui,-apple-system,sans-serif','color:#fff','white-space:nowrap'].join(';');
+  const makeButton = (id,label,title) => {
+    const b=document.createElement('button'); b.id=id; b.type='button'; b.textContent=label; b.title=title;
+    b.style.cssText='border:1px solid transparent;border-radius:9px;padding:9px 11px;background:#292d37;color:#dce1eb;font:inherit;cursor:pointer;';
+    b.addEventListener('mouseenter',()=>{b.style.background='#3a4050';});
+    b.addEventListener('mouseleave',()=>{b.style.background=b.dataset.active==='true'?'#2457d6':'#292d37';});
+    return b;
+  };
+  const back=makeButton('muse-nav-back','‹ Back','Go back one page');
+  const home=makeButton('muse-nav-home','⌂ Home','Return to the current AI service home page');
+  const muse=makeButton('muse-nav-muse','Muse AI','Switch to Muse AI');
+  const meta=makeButton('muse-nav-meta','Meta AI','Switch to Meta AI');
+  const status=document.createElement('span'); status.textContent='AI:'; status.style.cssText='padding:0 3px 0 6px;color:#aeb6c6;';
+  const updateActive=(site)=>{
+    for(const [button,key] of [[muse,'muse'],[meta,'meta']]){
+      const active=site===key; button.dataset.active=String(active);
+      button.style.background=active?'#2457d6':'#292d37'; button.style.color=active?'#fff':'#dce1eb';
+      button.style.borderColor=active?'#6d96ff':'transparent'; button.setAttribute('aria-pressed',String(active));
+    }
+  };
+  back.addEventListener('click',()=>ipcRenderer.invoke('muse-ui-go-back'));
+  home.addEventListener('click',()=>ipcRenderer.invoke('muse-ui-go-home'));
+  muse.addEventListener('click',async()=>{const current=await ipcRenderer.invoke('muse-ui-get-state');if(current&&current.site!=='muse')await ipcRenderer.invoke('muse-ui-switch-site');});
+  meta.addEventListener('click',async()=>{const current=await ipcRenderer.invoke('muse-ui-get-state');if(current&&current.site!=='meta')await ipcRenderer.invoke('muse-ui-switch-site');});
+  bar.append(back,home,status,muse,meta);
+  const mount=()=>{
+    if(!document.body)return;
+    document.body.appendChild(bar);
+    ipcRenderer.invoke('muse-ui-get-state').then(res=>updateActive(res&&res.site||'muse')).catch(()=>updateActive('muse'));
+  };
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',mount,{once:true});else mount();
+}
+injectAppNavigationBar();
 
 // ---- floating export button -------------------------------------------------
 function injectExportButton() {
