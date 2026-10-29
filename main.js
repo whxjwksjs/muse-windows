@@ -612,6 +612,21 @@ ipcMain.handle('open-settings', () => {
 // Floating "Export chat" button in the page asks the main process to export.
 ipcMain.on('muse-export-request', () => exportChat());
 
+ipcMain.handle('muse-download-media', async (event, rawUrl) => {
+  try {
+    const senderUrl = new URL(event.senderFrame?.url || event.sender.getURL());
+    if (!['muse.ai', 'www.muse.ai', 'meta.ai', 'www.meta.ai'].includes(senderUrl.hostname)) {
+      return { ok: false, error: 'Download request did not come from Muse or Meta AI.' };
+    }
+    const url = new URL(String(rawUrl || ''));
+    if (url.protocol !== 'https:') return { ok: false, error: 'Only HTTPS media links can be downloaded this way.' };
+    event.sender.downloadURL(url.href);
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: String(error && error.message || error) };
+  }
+});
+
 // ---- downloads & right-click menu -------------------------------------------
 // Electron shows no context menu on its own, so links can only be clicked
 // (navigating to them) rather than saved. This adds Save link/image as,
@@ -644,6 +659,12 @@ function attachContextMenu(win) {
       const url = params.linkURL;
       menu.append(new MenuItem({ label: 'Save link as…', click: () => win.webContents.downloadURL(url) }));
       menu.append(new MenuItem({ label: 'Copy link address', click: () => clipboard.writeText(url) }));
+      menu.append(new MenuItem({ type: 'separator' }));
+    }
+    if (params.srcURL && (params.mediaType === 'audio' || params.mediaType === 'video')) {
+      const mediaUrl = params.srcURL;
+      menu.append(new MenuItem({ label: 'Download media as…', click: () => win.webContents.downloadURL(mediaUrl) }));
+      menu.append(new MenuItem({ label: 'Copy media address', click: () => clipboard.writeText(mediaUrl) }));
       menu.append(new MenuItem({ type: 'separator' }));
     }
     if (params.hasImageContents && params.srcURL) {
