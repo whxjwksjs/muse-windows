@@ -3,8 +3,9 @@ const path = require('path');
 const fs = require('fs');
 
 const SITES = {
-  muse: { name: 'Muse', url: 'https://muse.ai' },
+  muse: { name: 'Muse AI', url: 'https://muse.ai' },
   meta: { name: 'Meta AI', url: 'https://www.meta.ai/' },
+  vibes: { name: 'Meta Vibes', url: 'https://www.meta.ai/vibes' },
 };
 // Global hotkeys, all user-remappable via the tray menu's "Customize hotkeys…".
 const DEFAULT_HOTKEYS = {
@@ -37,6 +38,7 @@ const HOTKEY_ACTIONS = {
 
 let mainWindow = null;
 let quickWindow = null;
+const separateSiteWindows = new Map();
 let tray = null;
 let updateDownloaded = false;
 let pendingUpdate = null;
@@ -107,6 +109,16 @@ saveState();
 const activeProfile = () => state.profiles.find((p) => p.id === state.activeProfileId) || state.profiles[0];
 const partitionFor = (profileId) => `persist:muse-${profileId}`;
 const currentSite = () => SITES[state.site] || SITES.muse;
+function siteKeyForUrl(rawUrl) {
+  try {
+    const url = new URL(rawUrl);
+    if (url.hostname === 'muse.ai' || url.hostname === 'www.muse.ai') return 'muse';
+    if (url.hostname === 'meta.ai' || url.hostname === 'www.meta.ai') {
+      return /\/vibes(?:\/|$)/i.test(url.pathname) ? 'vibes' : 'meta';
+    }
+  } catch { /* non-URL or empty */ }
+  return state.site;
+}
 
 function notify(title, body, onClick) {
   const n = new Notification({ title, body });
@@ -200,9 +212,53 @@ function createQuickWindow() {
   quickWindow.on('closed', () => { quickWindow = null; });
 }
 
+function openSeparateSiteWindow(siteKey) {
+  const site = SITES[siteKey];
+  if (!site) return null;
+  const existing = separateSiteWindows.get(siteKey);
+  if (existing && !existing.isDestroyed()) {
+    if (existing.isMinimized()) existing.restore();
+    existing.show();
+    existing.focus();
+    return existing;
+  }
+  const win = new BrowserWindow({
+    width: 1180, height: 800, title: `${site.name} (Muse desktop)`,
+    autoHideMenuBar: true, backgroundColor: '#141414', show: false,
+    webPreferences: webPrefs(),
+  });
+  separateSiteWindows.set(siteKey, win);
+  win.loadURL(site.url);
+  win.once('ready-to-show', () => { if (!win.isDestroyed()) win.show(); });
+  win.webContents.on('did-finish-load', () => injectMicShim(win));
+  attachZoomShortcuts(win);
+  attachContextMenu(win);
+  win.on('close', (e) => {
+    if (!app.quitting) { e.preventDefault(); win.hide(); }
+  });
+  win.on('closed', () => {
+    if (separateSiteWindows.get(siteKey) === win) separateSiteWindows.delete(siteKey);
+  });
+  return win;
+}
+
+function openAllSeparateSiteWindows() {
+  let activeMainSite = '';
+  try { if (mainWindow && !mainWindow.isDestroyed()) activeMainSite = siteKeyForUrl(mainWindow.webContents.getURL()); } catch {}
+  for (const siteKey of Object.keys(SITES)) {
+    if (siteKey === activeMainSite) continue;
+    openSeparateSiteWindow(siteKey);
+  }
+  notify('Separate windows opened', 'Muse AI, Meta AI and Vibes can now stay open independently.');
+}
+
 function closeWindows() {
-  if (quickWindow) { quickWindow.removeAllListeners('closed'); quickWindow.close(); quickWindow = null; }
-  if (mainWindow) { mainWindow.removeAllListeners('closed'); mainWindow.close(); mainWindow = null; }
+  for (const win of separateSiteWindows.values()) {
+    if (win && !win.isDestroyed()) { win.removeAllListeners('close'); win.removeAllListeners('closed'); win.close(); }
+  }
+  separateSiteWindows.clear();
+  if (quickWindow) { quickWindow.removeAllListeners('close'); quickWindow.removeAllListeners('closed'); quickWindow.close(); quickWindow = null; }
+  if (mainWindow) { mainWindow.removeAllListeners('close'); mainWindow.removeAllListeners('closed'); mainWindow.close(); mainWindow = null; }
 }
 
 function toggleQuickWindow() {
@@ -262,7 +318,8 @@ async function signOut() {
 }
 
 function toggleSite() {
-  state.site = state.site === 'muse' ? 'meta' : 'muse';
+  const keys = Object.keys(SITES);
+  state.site = keys[(keys.indexOf(state.site) + 1) % keys.length] || 'muse';
   saveState();
   // Reuse the existing window when possible. This keeps the switch feeling
   // like changing tabs instead of restarting the app.
@@ -611,18 +668,37 @@ ipcMain.handle('open-settings', () => {
   return { ok: true };
 });
 
-ipcMain.handle('muse-ui-get-state', () => ({ site: state.site, siteName: currentSite().name }));
-ipcMain.handle('muse-ui-switch-site', () => {
-  toggleSite();
-  return { site: state.site, siteName: currentSite().name };
+ipcMain.handle('muse-ui-get-state', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  const siteKey = win && !win.isDestroyed() ? siteKeyForUrl(win.webContents.getURL()) : state.site;
+  return { site: siteKey, siteName: (SITES[siteKey] || currentSite()).name, separateWindows: true };
+});
+ipcMain.handle('muse-ui-switch-site', (event, requestedSite) => {
+  const siteKey = SITES[requestedSite] ? requestedSite : 'muse';
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (win && !win.isDestroyed()) {
+    win.setTitle(`${SITES[siteKey].name} (Muse desktop)`);
+    win.loadURL(SITES[siteKey].url);
+    if (win === mainWindow) { state.site = siteKey; saveState(); buildTrayMenu(); }
+  }
+  return { site: siteKey, siteName: SITES[siteKey].name };
+});
+ipcMain.handle('muse-ui-open-separate-site', (event, siteKey) => {
+  if (!SITES[siteKey]) return { ok: false, error: 'Unknown AI site' };
+  openSeparateSiteWindow(siteKey);
+  return { ok: true, site: siteKey };
+});
+ipcMain.handle('muse-ui-open-all-separate-sites', () => {
+  openAllSeparateSiteWindows();
+  return { ok: true };
 });
 ipcMain.handle('muse-ui-go-home', (event) => {
   const win = BrowserWindow.fromWebContents(event.sender);
   if (win && !win.isDestroyed()) {
-    win.loadURL(currentSite().url);
-    if (win === mainWindow) win.setTitle(`${currentSite().name} (Muse desktop)`);
+    const siteKey = siteKeyForUrl(win.webContents.getURL());
+    win.loadURL((SITES[siteKey] || currentSite()).url);
   }
-  return { ok: true, site: state.site };
+  return { ok: true };
 });
 ipcMain.handle('muse-ui-go-back', (event) => {
   const win = BrowserWindow.fromWebContents(event.sender);
@@ -631,7 +707,8 @@ ipcMain.handle('muse-ui-go-back', (event) => {
     win.webContents.goBack();
     return { ok: true, wentBack: true };
   }
-  win.loadURL(currentSite().url);
+  const siteKey = siteKeyForUrl(win.webContents.getURL());
+  win.loadURL((SITES[siteKey] || currentSite()).url);
   return { ok: true, wentBack: false, returnedHome: true };
 });
 // Floating "Export chat" button in the page asks the main process to export.
@@ -940,7 +1017,8 @@ function setGlobalAutomationAction(actionKey, enabled) {
 
 function buildTrayMenu() {
   if (!tray) return;
-  const otherSite = state.site === 'muse' ? SITES.meta : SITES.muse;
+  const keys = Object.keys(SITES);
+  const otherSite = SITES[keys[(keys.indexOf(state.site) + 1) % keys.length]] || SITES.muse;
   const loginSettings = app.getLoginItemSettings();
 
   const profileItems = state.profiles.map((p) => ({
@@ -965,9 +1043,19 @@ function buildTrayMenu() {
   }));
 
   const template = [
-    { label: 'Open Muse', click: showMainWindow },
+    { label: 'Open current AI', click: showMainWindow },
     { label: `Quick chat  (${prettyHotkey(state.hotkeys.quick)})`, click: toggleQuickWindow },
     { label: `Switch to ${otherSite.name}  (${prettyHotkey(state.hotkeys.site)})`, click: toggleSite },
+    {
+      label: 'Open AI sites in separate windows',
+      submenu: [
+        { label: 'Open Muse AI window', click: () => openSeparateSiteWindow('muse') },
+        { label: 'Open Meta AI window', click: () => openSeparateSiteWindow('meta') },
+        { label: 'Open Meta Vibes window', click: () => openSeparateSiteWindow('vibes') },
+        { type: 'separator' },
+        { label: 'Open all three (Muse + Meta AI + Vibes)', click: openAllSeparateSiteWindows },
+      ],
+    },
     {
       label: 'Meta AI Accounts',
       submenu: [
