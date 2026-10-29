@@ -847,18 +847,20 @@ function injectAppNavigationBar() {
   bar.style.cssText = ['position:fixed','top:10px','left:50%','transform:translateX(-50%)','z-index:2147483647','display:flex','align-items:center','gap:5px','padding:6px','border-radius:14px','border:1px solid rgba(255,255,255,.16)','background:rgba(18,20,26,.96)','box-shadow:0 5px 22px rgba(0,0,0,.32)','backdrop-filter:blur(10px)','font:600 12px/1.2 system-ui,-apple-system,sans-serif','color:#fff','white-space:nowrap'].join(';');
   const makeButton = (id,label,title) => {
     const b=document.createElement('button'); b.id=id; b.type='button'; b.textContent=label; b.title=title;
-    b.style.cssText='border:1px solid transparent;border-radius:9px;padding:9px 11px;background:#292d37;color:#dce1eb;font:inherit;cursor:pointer;';
+    b.style.cssText='border:1px solid transparent;border-radius:9px;padding:9px 10px;background:#292d37;color:#dce1eb;font:inherit;cursor:pointer;';
     b.addEventListener('mouseenter',()=>{b.style.background='#3a4050';});
     b.addEventListener('mouseleave',()=>{b.style.background=b.dataset.active==='true'?'#2457d6':'#292d37';});
     return b;
   };
   const back=makeButton('muse-nav-back','‹ Back','Go back one page');
-  const home=makeButton('muse-nav-home','⌂ Home','Return to the current AI service home page');
-  const muse=makeButton('muse-nav-muse','Muse AI','Switch to Muse AI');
-  const meta=makeButton('muse-nav-meta','Meta AI','Switch to Meta AI');
-  const status=document.createElement('span'); status.textContent='AI:'; status.style.cssText='padding:0 3px 0 6px;color:#aeb6c6;';
+  const home=makeButton('muse-nav-home','⌂ Home','Return to this AI site home page');
+  const muse=makeButton('muse-nav-muse','Muse AI','Switch this window to Muse AI');
+  const meta=makeButton('muse-nav-meta','Meta AI','Switch this window to Meta AI');
+  const vibes=makeButton('muse-nav-vibes','Vibes','Switch this window to Meta Vibes');
+  const separate=makeButton('muse-nav-separate','↗ Separate','Open one or all AI sites in separate windows');
+  const status=document.createElement('span'); status.textContent='AI:'; status.style.cssText='padding:0 2px 0 5px;color:#aeb6c6;';
   const updateActive=(site)=>{
-    for(const [button,key] of [[muse,'muse'],[meta,'meta']]){
+    for(const [button,key] of [[muse,'muse'],[meta,'meta'],[vibes,'vibes']]){
       const active=site===key; button.dataset.active=String(active);
       button.style.background=active?'#2457d6':'#292d37'; button.style.color=active?'#fff':'#dce1eb';
       button.style.borderColor=active?'#6d96ff':'transparent'; button.setAttribute('aria-pressed',String(active));
@@ -866,9 +868,31 @@ function injectAppNavigationBar() {
   };
   back.addEventListener('click',()=>ipcRenderer.invoke('muse-ui-go-back'));
   home.addEventListener('click',()=>ipcRenderer.invoke('muse-ui-go-home'));
-  muse.addEventListener('click',async()=>{const current=await ipcRenderer.invoke('muse-ui-get-state');if(current&&current.site!=='muse')await ipcRenderer.invoke('muse-ui-switch-site');});
-  meta.addEventListener('click',async()=>{const current=await ipcRenderer.invoke('muse-ui-get-state');if(current&&current.site!=='meta')await ipcRenderer.invoke('muse-ui-switch-site');});
-  bar.append(back,home,status,muse,meta);
+  for(const [button,key] of [[muse,'muse'],[meta,'meta'],[vibes,'vibes']]){
+    button.addEventListener('click',()=>ipcRenderer.invoke('muse-ui-switch-site',key));
+  }
+  separate.addEventListener('click',()=>{
+    let menu=document.getElementById('muse-separate-menu');
+    if(menu){menu.remove();return;}
+    menu=document.createElement('div');menu.id='muse-separate-menu';
+    menu.style.cssText='position:absolute;top:calc(100% + 8px);right:0;display:flex;flex-direction:column;gap:5px;min-width:230px;padding:8px;border:1px solid #454b59;border-radius:12px;background:#171a21;box-shadow:0 8px 24px rgba(0,0,0,.4);';
+    const item=(label,action)=>{
+      const b=document.createElement('button');b.type='button';b.textContent=label;
+      b.style.cssText='text-align:left;border:0;border-radius:8px;padding:10px;background:#292d37;color:#fff;font:500 12px system-ui;cursor:pointer;';
+      b.addEventListener('mouseenter',()=>b.style.background='#3a4050');
+      b.addEventListener('mouseleave',()=>b.style.background='#292d37');
+      b.addEventListener('click',async()=>{menu.remove();await action();});
+      return b;
+    };
+    menu.append(
+      item('Open Muse AI in a separate window',()=>ipcRenderer.invoke('muse-ui-open-separate-site','muse')),
+      item('Open Meta AI in a separate window',()=>ipcRenderer.invoke('muse-ui-open-separate-site','meta')),
+      item('Open Meta Vibes in a separate window',()=>ipcRenderer.invoke('muse-ui-open-separate-site','vibes')),
+      item('Open all three sites separately',()=>ipcRenderer.invoke('muse-ui-open-all-separate-sites'))
+    );
+    bar.appendChild(menu);
+  });
+  bar.append(back,home,status,muse,meta,vibes,separate);
   const mount=()=>{
     if(!document.body)return;
     document.body.appendChild(bar);
