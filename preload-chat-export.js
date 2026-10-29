@@ -485,7 +485,15 @@ contextBridge.exposeInMainWorld('automationAPI', {
 
   function togglePanel() {
     if (!panelContainer) return;
-    panelContainer.style.display = panelContainer.style.display === 'none' ? 'flex' : 'none';
+    const opening = panelContainer.style.display === 'none';
+    panelContainer.style.display = opening ? 'flex' : 'none';
+    if (opening && widgetContainer) {
+      const rect = widgetContainer.getBoundingClientRect();
+      panelContainer.style.top = rect.top > window.innerHeight / 2 ? 'auto' : '36px';
+      panelContainer.style.bottom = rect.top > window.innerHeight / 2 ? '36px' : 'auto';
+      panelContainer.style.left = rect.left > window.innerWidth / 2 ? 'auto' : '0';
+      panelContainer.style.right = rect.left > window.innerWidth / 2 ? '0' : 'auto';
+    }
   }
 
   function renderPanelContent() {
@@ -770,10 +778,18 @@ function injectMediaDownloadButton() {
         const response = await fetch(url);
         if (!response.ok) throw new Error('Could not read the media player data.');
         const blob = await response.blob();
+        const mimeExtensions = {
+          'audio/mpeg': '.mp3', 'audio/mp3': '.mp3', 'audio/wav': '.wav',
+          'audio/x-wav': '.wav', 'audio/ogg': '.ogg', 'audio/opus': '.opus',
+          'audio/mp4': '.m4a', 'audio/aac': '.aac', 'audio/flac': '.flac',
+          'video/mp4': '.mp4', 'video/webm': '.webm', 'video/ogg': '.ogv',
+          'video/quicktime': '.mov',
+        };
+        const extension = mimeExtensions[String(blob.type || '').toLowerCase()] || '.mp4';
         const objectUrl = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = objectUrl;
-        link.download = suggestedName.includes('.') ? suggestedName : 'muse-media-download';
+        link.download = suggestedName.includes('.') ? suggestedName : 'muse-media-download' + extension;
         document.body.appendChild(link); link.click(); link.remove();
         setTimeout(() => URL.revokeObjectURL(objectUrl), 30000);
       } else {
